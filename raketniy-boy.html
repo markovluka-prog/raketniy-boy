@@ -1,0 +1,2116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ракетный бой</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #05010a;
+    overflow: hidden;
+    height: 100%;
+    font-family: 'Courier New', monospace;
+  }
+  canvas {
+    display: block;
+    background: #0a0414;
+  }
+
+  /* --- Меню --- */
+  #menu {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+    background: radial-gradient(ellipse at center, #1a0f2e 0%, #05010a 75%);
+    z-index: 10;
+    animation: menuFadeIn 0.5s ease;
+  }
+  #menu.hidden { display: none; }
+  @keyframes menuFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  #menuShipWrap {
+    width: 120px;
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: shipFloat 3s ease-in-out infinite;
+  }
+  @keyframes shipFloat {
+    0%, 100% { transform: translateY(0) rotate(-3deg); }
+    50% { transform: translateY(-10px) rotate(3deg); }
+  }
+  #menuShipWrap img {
+    width: 90px;
+    filter: drop-shadow(0 0 18px #6fd6ff);
+    animation: shipSpin 6s linear infinite;
+  }
+  @keyframes shipSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  #title {
+    font-size: 44px;
+    letter-spacing: 6px;
+    color: #9be7ff;
+    text-shadow: 0 0 12px #2ad4ff, 0 0 30px #2ad4ff;
+    text-align: center;
+    animation: titlePulse 2.4s ease-in-out infinite;
+  }
+  @keyframes titlePulse {
+    0%, 100% { text-shadow: 0 0 12px #2ad4ff, 0 0 30px #2ad4ff; }
+    50% { text-shadow: 0 0 20px #6fe8ff, 0 0 46px #2ad4ff; }
+  }
+  #menuSub {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #9be7ff;
+    font-size: 16px;
+    text-shadow: 0 0 8px rgba(107, 214, 255, 0.7);
+    text-align: center;
+    max-width: 480px;
+    line-height: 1.5;
+  }
+  #playBtn {
+    padding: 16px 46px;
+    font-size: 20px;
+    letter-spacing: 3px;
+    font-family: 'Courier New', monospace;
+    color: #05010a;
+    background: linear-gradient(180deg, #9be7ff, #2ad4ff);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(42, 212, 255, 0.55);
+    animation: btnPulse 1.6s ease-in-out infinite;
+    transition: transform 0.15s ease;
+  }
+  #playBtn:hover {
+    transform: scale(1.06);
+  }
+  @keyframes btnPulse {
+    0%, 100% { box-shadow: 0 0 24px rgba(42, 212, 255, 0.55); }
+    50% { box-shadow: 0 0 40px rgba(42, 212, 255, 0.9); }
+  }
+  #play2pBtn {
+    padding: 12px 36px;
+    font-size: 15px;
+    letter-spacing: 2px;
+    font-family: 'Courier New', monospace;
+    color: #05010a;
+    background: linear-gradient(180deg, #ff9a9a, #ff5e5e);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 0 18px rgba(255, 94, 94, 0.45);
+    transition: transform 0.15s ease;
+  }
+  #play2pBtn:hover {
+    transform: scale(1.06);
+  }
+  #menuHint {
+    color: #6f8faf;
+    font-size: 13px;
+    letter-spacing: 1px;
+    animation: hintBlink 2s ease-in-out infinite;
+  }
+  @keyframes hintBlink {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  /* --- HUD в игре --- */
+  #hud {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 5;
+  }
+  #hud.hidden { display: none; }
+  #bossHpWrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 16px;
+    background: rgba(10, 4, 20, 0.55);
+    border: 1px solid rgba(255, 107, 107, 0.4);
+    border-radius: 999px;
+    color: #ff8a8a;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+  #powerupTray {
+    display: flex;
+    gap: 8px;
+  }
+  .pu-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 10px;
+    background: rgba(10, 4, 20, 0.6);
+    border: 1px solid rgba(107, 214, 255, 0.4);
+    border-radius: 10px;
+    color: #9be7ff;
+    font-size: 10px;
+    animation: puBadgeIn 0.25s ease;
+  }
+  @keyframes puBadgeIn {
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  .pu-badge img { width: 22px; height: 22px; }
+  .pu-badge .timer { font-variant-numeric: tabular-nums; }
+
+  /* --- Экраны конца игры --- */
+  #winScreen, #loseScreen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: rgba(5, 1, 10, 0.86);
+    z-index: 20;
+    animation: menuFadeIn 0.4s ease;
+  }
+  #winScreen.hidden, #loseScreen.hidden { display: none; }
+  #winTitle {
+    font-size: 38px;
+    color: #6fd6ff;
+    text-shadow: 0 0 16px rgba(111, 214, 255, 0.9);
+    animation: titlePulse 1.6s ease-in-out infinite;
+  }
+  #loseTitle {
+    font-size: 38px;
+    color: #ff5e5e;
+    text-shadow: 0 0 16px rgba(255, 94, 94, 0.9);
+    animation: titlePulse 1.6s ease-in-out infinite;
+  }
+  #restartBtn, #retryBtn {
+    padding: 14px 38px;
+    font-size: 18px;
+    letter-spacing: 2px;
+    font-family: 'Courier New', monospace;
+    color: #05010a;
+    background: linear-gradient(180deg, #9be7ff, #2ad4ff);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(42, 212, 255, 0.55);
+    transition: transform 0.15s ease;
+  }
+  #retryBtn {
+    background: linear-gradient(180deg, #ff9a9a, #ff5e5e);
+    box-shadow: 0 0 24px rgba(255, 94, 94, 0.55);
+  }
+  #restartBtn:hover, #retryBtn:hover { transform: scale(1.06); }
+
+  .ghost-btn {
+    padding: 10px 30px;
+    font-size: 14px;
+    letter-spacing: 1.5px;
+    font-family: 'Courier New', monospace;
+    color: #9be7ff;
+    background: transparent;
+    border: 1px solid rgba(107, 214, 255, 0.5);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+  .ghost-btn:hover { background: rgba(107, 214, 255, 0.12); transform: scale(1.04); }
+
+  #arcadeMenuBtn {
+    display: inline-block;
+    margin-top: 4px;
+    text-decoration: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="bossHpWrap"><span id="bossLabel">МАНЕКЕН</span>: <span id="bossStatus">ЖИВ</span></div>
+  <div id="powerupTray"></div>
+</div>
+
+<div id="menu">
+  <div id="menuShipWrap"><img src="img/ship.png" alt="Ракета"></div>
+  <div id="title">РАКЕТНЫЙ БОЙ</div>
+  <div id="menuSub">Уничтожь бота-манекена. Собирай коробки с "?" — внутри случайное оружие: лазерный меч, силовое поле, стрельба ракетами, магнитная ловушка или дрон-помощник. Одно попадание — смерть, будь осторожен и сам!</div>
+  <button id="playBtn">В БОЙ (против бота)</button>
+  <button id="play2pBtn">2 ИГРОКА</button>
+  <a id="arcadeMenuBtn" class="ghost-btn" href="index.html">← МЕНЮ АРКАД</a>
+  <div id="menuHint">Синий: Space — тяга, Space+L — меч · Красный: ↑ — тяга, ←+↑ — меч</div>
+</div>
+
+<div id="winScreen" class="hidden">
+  <div id="winTitle">МАНЕКЕН УНИЧТОЖЕН!</div>
+  <button id="restartBtn">ЕЩЁ РАЗ</button>
+  <button id="winMenuBtn" class="ghost-btn">В МЕНЮ ИГРЫ</button>
+</div>
+
+<div id="loseScreen" class="hidden">
+  <div id="loseTitle">ТЫ УНИЧТОЖЕН</div>
+  <button id="retryBtn">ЗАНОВО</button>
+  <button id="loseMenuBtn" class="ghost-btn">В МЕНЮ ИГРЫ</button>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Загрузка ассетов ---
+function loadImg(src) {
+  const img = new Image();
+  img.src = src;
+  return img;
+}
+
+const shipImg = loadImg('img/ship.png');
+const dummyImg = loadImg('img/dummy.png');
+const laserImg = loadImg('img/laser.png');
+const laserBotImg = loadImg('img/laser_bot.png');
+const droneImg = loadImg('img/drone.png');
+const droneBotImg = loadImg('img/drone_bot.png');
+const trapStationImg = loadImg('img/trap_station.png');
+const turretImg = loadImg('img/turret.png');
+const starGoldImg = loadImg('img/star_gold.png');
+
+const meteorImgs = ['img/meteor_big1.png', 'img/meteor_big2.png', 'img/meteor_big3.png', 'img/meteor_big4.png'].map(loadImg);
+
+const PU_TYPES = {
+  shoot:  { name: 'Стрельба',        img: loadImg('img/pu_shoot.png'),  duration: 7,        weight: 3 },
+  sword:  { name: 'Лазерный меч',    img: loadImg('img/pu_sword.png'),  duration: 7,        weight: 1 }, // редкий
+  shield: { name: 'Силовое поле',    img: loadImg('img/pu_shield.png'), duration: 7,        weight: 1 }, // редкий
+  magnet: { name: 'Магн. ловушка',   img: loadImg('img/pu_magnet.png'), duration: Infinity, weight: 3 },
+  drone:  { name: 'Дрон-помощник',   img: loadImg('img/pu_drone.png'),  duration: 0,        weight: 3 }, // сам дрон живёт 7с, баф мгновенный
+};
+const PU_KEYS = Object.keys(PU_TYPES);
+
+function pickRandomPowerupKey() {
+  const totalWeight = PU_KEYS.reduce((sum, k) => sum + PU_TYPES[k].weight, 0);
+  let roll = Math.random() * totalWeight;
+  for (const key of PU_KEYS) {
+    roll -= PU_TYPES[key].weight;
+    if (roll < 0) return key;
+  }
+  return PU_KEYS[PU_KEYS.length - 1];
+}
+
+const bgImg = loadImg('img/bg.png');
+let bgPattern = null;
+bgImg.onload = () => {
+  bgPattern = ctx.createPattern(bgImg, 'repeat');
+};
+
+// --- Состояние игры ---
+let gameState = 'menu'; // 'menu' | 'playing' | 'won' | 'lost'
+let twoPlayerMode = false; // true — красным управляет живой человек, а не ИИ
+
+// --- Корабль ---
+const ship = {
+  x: 0, y: 0, vx: 0, vy: 0,
+  angle: -Math.PI / 2,
+  rotSpeed: 1.6,
+  thrust: 220,
+  maxSpeed: 420,
+  friction: 0.995,
+  radius: 26,
+};
+
+function resetShip() {
+  ship.x = canvas.width / 2;
+  ship.y = canvas.height / 2;
+  ship.vx = 0;
+  ship.vy = 0;
+  ship.angle = -Math.PI / 2;
+}
+resetShip();
+
+// --- Бот — такой же игрок, как и ты: летает, подбирает коробки, использует способности ---
+const dummy = {
+  x: 0, y: 0, vx: 0, vy: 0,
+  angle: 0,
+  radius: 26,
+  alive: true,
+  active: {},        // свои таймеры способностей, аналог active игрока
+  shootCooldown: 0,
+  targetCrate: null,
+  thrusting: false,
+};
+
+function resetDummy() {
+  dummy.x = canvas.width / 2;
+  dummy.y = canvas.height / 2 - 160;
+  dummy.vx = 0;
+  dummy.vy = 0;
+  dummy.angle = Math.PI / 2;
+  dummy.alive = true;
+  dummy.active = {};
+  dummy.shootCooldown = 0;
+  dummy.targetCrate = null;
+  dummy.thrusting = false;
+}
+
+// Сразу разворачивает бота к его первой цели, чтобы он не ждал случайного
+// совпадения угла из-за постоянного самовращения ("долго думает" на старте).
+function aimDummyAtNearestCrate() {
+  const freeCrates = crates.filter(c => !c.collected);
+  if (!freeCrates.length) return;
+  let best = null, bestDist = Infinity;
+  for (const c of freeCrates) {
+    const d = Math.hypot(c.x - dummy.x, c.y - dummy.y);
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  dummy.angle = Math.atan2(best.y - dummy.y, best.x - dummy.x);
+}
+
+// --- Активные способности игрока ---
+// active[key] = секунд осталось (Infinity для ловушки), true/для мгновенных
+let active = {};
+
+function grantPowerup(owner, key, x, y) {
+  const activeRef = owner === 'player' ? active : dummy.active;
+  if (key === 'drone') {
+    spawnDrone(owner, x, y);
+    return;
+  }
+  if (key === 'magnet') {
+    magnetTraps.push({ x, y, radius: 170, owner });
+    return;
+  }
+  // Меч бога (Infinity) — сильнее обычного меча из коробки: подбор обычного
+  // меча не должен затирать уже активный вечный статус.
+  if (key === 'sword' && activeRef.sword === Infinity) {
+    return;
+  }
+  activeRef[key] = PU_TYPES[key].duration;
+  if (owner === 'player') renderPowerupTray();
+}
+
+// --- Магнитные ловушки (статичные точки, тянут противника владельца, если он в радиусе) ---
+let magnetTraps = [];
+
+// --- Дроны-помощники (автономные, убивают при касании, живут 7с) ---
+let drones = [];
+
+function spawnDrone(owner, x, y) {
+  const angle = Math.random() * Math.PI * 2;
+  drones.push({
+    x: x + Math.cos(angle) * 60,
+    y: y + Math.sin(angle) * 60,
+    vx: 0, vy: 0,
+    life: 7,
+    radius: 16,
+    owner,
+  });
+}
+
+// --- Турели: враждебная нейтральная угроза, появляется раз в 30с в случайном
+// месте и стреляет ракетами крестом (вверх/вниз/влево/вправо), угрожая игроку.
+let turrets = [];
+let turretSpawnTimer = 0;
+const TURRET_SPAWN_INTERVAL = 15;
+const TURRET_FIRE_INTERVAL = 1.4;
+const TURRET_RADIUS = 24;
+
+function spawnTurret() {
+  const pad = 80;
+  let attempts = 0;
+  let x, y;
+  while (attempts < 300) {
+    attempts++;
+    x = pad + Math.random() * (canvas.width - pad * 2);
+    y = pad + Math.random() * (canvas.height - pad * 2);
+    if (isInsideAnyCorner(x, y, 110)) continue;
+    if (Math.hypot(x - ship.x, y - ship.y) < 150) continue;
+    if (Math.hypot(x - dummy.x, y - dummy.y) < 100) continue;
+    break;
+  }
+  turrets.push({ x, y, fireCooldown: 1, spawnAnim: 0, alliedOwner: null });
+}
+
+// --- Управление ---
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (gameState === 'menu') startGame(false);
+  }
+  if (twoPlayerMode && (e.code === 'ArrowUp' || e.code === 'ArrowLeft' || e.code === 'ArrowDown' || e.code === 'ArrowRight')) {
+    e.preventDefault(); // не скроллить страницу стрелками во время игры
+  }
+
+  // Пасхалка: Space + L — вечный лазерный меч (синий игрок)
+  if (gameState === 'playing' && keys['Space'] && (e.code === 'KeyL' || e.code === 'Space')) {
+    if (keys['KeyL'] && keys['Space'] && active.sword !== Infinity) {
+      active.sword = Infinity;
+      renderPowerupTray();
+      spawnEasterEggFx(ship.x, ship.y, '#2ad4ff', 'ЛАЗЕРНЫЙ МЕЧ');
+    }
+  }
+
+  // Пасхалка: ArrowLeft + ArrowUp — вечный лазерный меч (красный игрок, только в режиме 2 игроков)
+  if (twoPlayerMode && gameState === 'playing' && keys['ArrowUp'] && (e.code === 'ArrowLeft' || e.code === 'ArrowUp')) {
+    if (keys['ArrowLeft'] && keys['ArrowUp'] && dummy.active.sword !== Infinity) {
+      dummy.active.sword = Infinity;
+      spawnEasterEggFx(dummy.x, dummy.y, '#ff5e3a', 'ЛАЗЕРНЫЙ МЕЧ');
+    }
+  }
+});
+window.addEventListener('keyup', e => {
+  keys[e.code] = false;
+});
+
+// Пасхалка 2: правый клик по полю — спавнит турель в точке клика
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (gameState !== 'playing') return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  turrets.push({ x, y, fireCooldown: 1, spawnAnim: 0, alliedOwner: null });
+  spawnEasterEggFx(x, y, '#c86fff', 'ТУРЕЛЬ');
+});
+
+// --- Угловые астероиды-стены ---
+let cornerAsteroids = [];
+
+function buildCorners() {
+  cornerAsteroids = [];
+  const margin = 40;
+  const corners = [
+    { x: margin, y: margin },
+    { x: canvas.width - margin, y: margin },
+    { x: margin, y: canvas.height - margin },
+    { x: canvas.width - margin, y: canvas.height - margin },
+  ];
+  corners.forEach((c, ci) => {
+    cornerAsteroids.push({
+      x: c.x, y: c.y, radius: 90,
+      img: meteorImgs[ci % meteorImgs.length],
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.2,
+    });
+  });
+}
+buildCorners();
+window.addEventListener('resize', () => {
+  buildCorners();
+  if (gameState === 'menu') resetShip();
+});
+
+function isInsideAnyCorner(x, y, extraMargin) {
+  return cornerAsteroids.some(a => Math.hypot(x - a.x, y - a.y) < a.radius + extraMargin);
+}
+
+// --- Коробки с "?" (1-2 на карте одновременно) ---
+let crates = [];
+const MAX_CRATES = 2;
+
+function spawnCrate() {
+  const pad = 70;
+  let attempts = 0;
+  while (attempts < 500) {
+    attempts++;
+    const x = pad + Math.random() * (canvas.width - pad * 2);
+    const y = pad + Math.random() * (canvas.height - pad * 2);
+    if (isInsideAnyCorner(x, y, 100)) continue;
+    if (Math.hypot(x - ship.x, y - ship.y) < 100) continue;
+    if (Math.hypot(x - dummy.x, y - dummy.y) < 100) continue;
+    if (crates.some(c => Math.hypot(x - c.x, y - c.y) < 90)) continue;
+    crates.push({ x, y, spin: 0, collected: false, collectAnim: 0, chosenKey: null });
+    return;
+  }
+}
+
+function refillCrates() {
+  while (crates.filter(c => !c.collected).length < MAX_CRATES) {
+    spawnCrate();
+  }
+}
+
+// --- Снаряды (ракеты от способности "стрельба") ---
+let bullets = [];
+let shootCooldown = 0;
+
+// --- Частицы ---
+let particles = [];
+
+// Столкновение двух мечей бога: нейтральный взрыв — пули появляются равными
+// промежутками по периметру экрана (стенам арены) и летят внутрь к точке
+// столкновения клинков, угрожая обоим кораблям одинаково.
+const CLASH_BULLET_COUNT = 24;
+const CLASH_BULLET_SPEED = 100;
+const CLASH_BULLET_SIZE_SCALE = 0.5; // вдвое меньше обычной ракеты
+
+function pointOnPerimeter(t, w, h) {
+  // t от 0 до 1 обходит периметр прямоугольника по часовой стрелке
+  const perim = 2 * (w + h);
+  let d = t * perim;
+  if (d < w) return { x: d, y: 0 };
+  d -= w;
+  if (d < h) return { x: w, y: d };
+  d -= h;
+  if (d < w) return { x: w - d, y: h };
+  d -= w;
+  return { x: 0, y: h - d };
+}
+
+function spawnGodSwordClash(x, y) {
+  spawnEasterEggFx(x, y, '#ffffff', 'СТОЛКНОВЕНИЕ МЕЧЕЙ БОГА');
+  spawnBurst(x, y, '#ffffff', 30);
+
+  for (let i = 0; i < CLASH_BULLET_COUNT; i++) {
+    const t = i / CLASH_BULLET_COUNT;
+    const p = pointOnPerimeter(t, canvas.width, canvas.height);
+    const dx = x - p.x;
+    const dy = y - p.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    bullets.push({
+      x: p.x,
+      y: p.y,
+      vx: (dx / dist) * CLASH_BULLET_SPEED,
+      vy: (dy / dist) * CLASH_BULLET_SPEED,
+      angle: Math.atan2(dy, dx),
+      life: 4,
+      owner: 'turret', // нейтральный урон обоим, без "союзности"
+      alliedOwner: null,
+      sizeScale: CLASH_BULLET_SIZE_SCALE,
+    });
+  }
+}
+
+function spawnBurst(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+    const speed = 80 + Math.random() * 140;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * speed,
+      vy: Math.sin(a) * speed,
+      life: 0.5 + Math.random() * 0.3,
+      maxLife: 0.5 + Math.random() * 0.3,
+      size: 3 + Math.random() * 3,
+      color,
+    });
+  }
+}
+
+function updateParticles(dt) {
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.94;
+    p.vy *= 0.94;
+    p.life -= dt;
+  }
+}
+
+// --- "Меч бога": вращающиеся звёзды вокруг того, кто избежал смерти от камикадзе ---
+let godSwordFx = [];
+
+// Счётчики раундов "меча бога" — переживают startGame(), в отличие от active/dummy.active.
+// Устанавливаются в 3 (этот раунд + 2 следующих) в момент спасения от камикадзе.
+let godSwordRoundsPlayer = 0;
+let godSwordRoundsBot = 0;
+
+// Debounce для взрыва столкновения мечей бога — не даёт спавнить взрыв
+// каждый кадр, пока клинки продолжают пересекаться.
+let godSwordClashActive = false;
+
+function spawnGodSwordFx(target) {
+  godSwordFx.push({ target, life: 3, maxLife: 3 });
+  spawnEasterEggFx(target.x, target.y, '#2ad4ff', 'МЕЧ БОГА');
+}
+
+function updateGodSwordFx(dt) {
+  godSwordFx = godSwordFx.filter(f => f.life > 0);
+  for (const f of godSwordFx) f.life -= dt;
+}
+
+function drawGodSwordFx() {
+  const size = 22;
+  for (const f of godSwordFx) {
+    const t = f.life / f.maxLife;
+    const count = 5;
+    const orbitR = 42;
+    for (let i = 0; i < count; i++) {
+      const angle = (performance.now() / 500) + (Math.PI * 2 * i) / count;
+      const x = f.target.x + Math.cos(angle) * orbitR;
+      const y = f.target.y + Math.sin(angle) * orbitR;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle * 2);
+      ctx.globalAlpha = Math.min(1, t * 2);
+      ctx.shadowColor = '#ffd76a';
+      ctx.shadowBlur = 10;
+      if (starGoldImg.complete && starGoldImg.naturalWidth) {
+        ctx.drawImage(starGoldImg, -size / 2, -size / 2, size, size);
+      } else {
+        ctx.fillStyle = '#ffd76a';
+        ctx.beginPath();
+        ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+// --- Визуальный отклик пасхалок: надпись + расходящееся кольцо на месте активации ---
+let easterEggFx = [];
+
+function spawnEasterEggFx(x, y, color, label) {
+  easterEggFx.push({ x, y, color, label, life: 1.4, maxLife: 1.4 });
+  spawnBurst(x, y, color, 22);
+}
+
+function updateEasterEggFx(dt) {
+  easterEggFx = easterEggFx.filter(f => f.life > 0);
+  for (const f of easterEggFx) f.life -= dt;
+}
+
+function drawEasterEggFx() {
+  for (const f of easterEggFx) {
+    const t = 1 - f.life / f.maxLife; // 0 -> 1
+    const ringR = 10 + t * 70;
+    const alpha = f.life / f.maxLife;
+
+    ctx.save();
+    ctx.translate(f.x, f.y);
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = f.color;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = f.color;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const textScale = Math.min(1, t * 3);
+    ctx.globalAlpha = alpha;
+    ctx.font = `bold ${18 * textScale}px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = f.color;
+    ctx.shadowBlur = 10;
+    ctx.fillText(f.label, 0, -ringR - 14);
+
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const t = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = t;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * t, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.shadowBlur = 0;
+}
+
+// --- HUD: панель активных способностей ---
+function renderPowerupTray() {
+  const tray = document.getElementById('powerupTray');
+  tray.innerHTML = '';
+  for (const key of PU_KEYS) {
+    if (key === 'drone' || key === 'magnet') continue;
+    if (!(key in active)) continue;
+    const def = PU_TYPES[key];
+    const badge = document.createElement('div');
+    badge.className = 'pu-badge';
+    const img = document.createElement('img');
+    img.src = def.img.src;
+    const timer = document.createElement('span');
+    timer.className = 'timer';
+    timer.textContent = active[key] === Infinity ? '∞' : Math.ceil(active[key]);
+    badge.appendChild(img);
+    badge.appendChild(timer);
+    tray.appendChild(badge);
+  }
+}
+
+// --- Игровой цикл ---
+let lastTime = performance.now();
+
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + dx * t;
+  const cy = ay + dy * t;
+  return Math.hypot(px - cx, py - cy);
+}
+
+const SWORD_LEN = 90;
+
+// Возвращает {hiltX, hiltY, tipX, tipY} клинка меча данного корабля
+function getSwordSegment(shipLike) {
+  const hiltX = shipLike.x + Math.cos(shipLike.angle) * shipLike.radius;
+  const hiltY = shipLike.y + Math.sin(shipLike.angle) * shipLike.radius;
+  const tipX = hiltX + Math.cos(shipLike.angle) * SWORD_LEN;
+  const tipY = hiltY + Math.sin(shipLike.angle) * SWORD_LEN;
+  return { hiltX, hiltY, tipX, tipY };
+}
+
+// Пересечение двух отрезков (для столкновения клинков мечей бога).
+// Возвращает точку пересечения {x, y} или null, если отрезки не пересекаются.
+function segmentIntersection(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1x = bx - ax, d1y = by - ay;
+  const d2x = dx - cx, d2y = dy - cy;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-6) return null; // параллельны
+  const t = ((cx - ax) * d2y - (cy - ay) * d2x) / denom;
+  const u = ((cx - ax) * d1y - (cy - ay) * d1x) / denom;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { x: ax + d1x * t, y: ay + d1y * t };
+}
+
+function killDummy() {
+  if (!dummy.alive) return;
+  dummy.alive = false;
+  spawnBurst(dummy.x, dummy.y, '#ff5e5e', 26);
+  winGame();
+}
+
+function killPlayer() {
+  if (gameState !== 'playing') return;
+  spawnBurst(ship.x, ship.y, '#6fd6ff', 26);
+  loseGame();
+}
+
+// Бот управляет своим звездолётом по тем же правилам, что и игрок:
+// корабль постоянно вращается сам по себе, а "тяга вперёд" (аналог пробела)
+// включается только когда ИИ считает нос направленным на цель.
+// Радиус, на котором бот считает игрока с мечом/полем непосредственной угрозой.
+// Увеличен, чтобы бот реагировал заранее, а не в последний момент перед столкновением.
+const BOT_DANGER_RANGE = 220;
+const BOT_BULLET_DANGER_RANGE = 260; // снаряды летят быстро — замечаем их раньше
+
+// Возвращает координаты САМОГО БЛИЗКОГО источника угрозы (не всегда это сам
+// игрок — например, его дрон-камикадзе может уже быть далеко от игрока и
+// атаковать с другой стороны), либо null, если угроз нет.
+// С мечом бога (Infinity) бот НЕПОБЕДИМ для меча/поля/снарядов игрока (клинок
+// рикошетит пули и не даёт умереть от касания) — такие угрозы для него больше
+// не угрозы, и он идёт в атаку вместо бегства. Дрон-камикадзе игрока —
+// отдельный случай (см. updateBot): именно он может подарить боту вечный меч.
+function getBotThreat() {
+  let closest = null;
+  let closestDist = Infinity;
+
+  const invincible = dummy.active.sword === Infinity;
+
+  if (!invincible && (active.sword || active.shield)) {
+    const d = Math.hypot(ship.x - dummy.x, ship.y - dummy.y);
+    if (d < BOT_DANGER_RANGE && d < closestDist) { closestDist = d; closest = ship; }
+  }
+  if (!invincible) {
+    for (const b of bullets) {
+      // Снаряды игрока и нейтральной турели одинаково смертельны для бота
+      if (b.owner !== 'player' && b.owner !== 'turret') continue;
+      const d = Math.hypot(b.x - dummy.x, b.y - dummy.y);
+      if (d < BOT_BULLET_DANGER_RANGE && d < closestDist) { closestDist = d; closest = b; }
+    }
+  }
+  // Дрон-камикадзе игрока смертелен для бота, ДАЖЕ с мечом бога в руке —
+  // но с обычным мечом бот намеренно не считает его угрозой (см. updateBot).
+  if (!(dummy.active.sword && dummy.active.sword !== Infinity)) {
+    for (const dr of drones) {
+      if (dr.owner !== 'player') continue;
+      const d = Math.hypot(dr.x - dummy.x, dr.y - dummy.y);
+      if (d < BOT_DANGER_RANGE && d < closestDist) { closestDist = d; closest = dr; }
+    }
+  }
+  return closest;
+}
+
+// Есть ли у бота активное боевое оружие ближнего/дальнего боя — тогда он атакует, а не прячется
+function active_hasBotWeapon() {
+  return !!(dummy.active.sword || dummy.active.shield || dummy.active.shoot);
+}
+
+// Ближайший дрон-камикадзе игрока (вражеский для бота) и ближайшая ловушка
+// игрока — цели, которые бот должен сам искать и уничтожать, а не полагаться
+// на случайное пересечение путей к игроку.
+function findNearestPlayerDrone() {
+  let best = null, bestDist = Infinity;
+  for (const dr of drones) {
+    if (dr.owner !== 'player') continue;
+    const d = Math.hypot(dr.x - dummy.x, dr.y - dummy.y);
+    if (d < bestDist) { bestDist = d; best = dr; }
+  }
+  return best;
+}
+
+function findNearestPlayerTrap() {
+  let best = null, bestDist = Infinity;
+  for (const trap of magnetTraps) {
+    if (trap.destroyed || trap.owner !== 'player') continue;
+    const d = Math.hypot(trap.x - dummy.x, trap.y - dummy.y);
+    if (d < bestDist) { bestDist = d; best = trap; }
+  }
+  return best;
+}
+
+// Кратчайшее направление от (ax,ay) к (bx,by) с учётом переноса через край экрана
+// (toroidal distance) — иначе ИИ может выбирать путь "напрямую", когда через край короче.
+function wrapDelta(ax, ay, bx, by) {
+  let dx = bx - ax;
+  let dy = by - ay;
+  if (Math.abs(dx) > canvas.width / 2) dx -= Math.sign(dx) * canvas.width;
+  if (Math.abs(dy) > canvas.height / 2) dy -= Math.sign(dy) * canvas.height;
+  return { dx, dy };
+}
+
+// Режим 2 игроков: красным (dummy) управляет живой человек через стрелки,
+// а не ИИ. Физика идентична синему игроку (ship), только клавиша тяги другая.
+function updatePlayer2(dt) {
+  if (!dummy.alive || gameState !== 'playing') return;
+
+  const thrusting = !!keys['ArrowUp'];
+
+  if (!thrusting) {
+    dummy.angle += ship.rotSpeed * dt;
+  }
+  if (thrusting) {
+    dummy.vx += Math.cos(dummy.angle) * ship.thrust * dt;
+    dummy.vy += Math.sin(dummy.angle) * ship.thrust * dt;
+  }
+  dummy.thrusting = thrusting;
+
+  dummy.vx *= ship.friction;
+  dummy.vy *= ship.friction;
+
+  const speed = Math.hypot(dummy.vx, dummy.vy);
+  if (speed > ship.maxSpeed) {
+    dummy.vx = (dummy.vx / speed) * ship.maxSpeed;
+    dummy.vy = (dummy.vy / speed) * ship.maxSpeed;
+  }
+
+  let nx = dummy.x + dummy.vx * dt;
+  let ny = dummy.y + dummy.vy * dt;
+
+  for (const a of cornerAsteroids) {
+    const dx = nx - a.x;
+    const dy = ny - a.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = a.radius + dummy.radius * 0.6;
+    if (dist < minDist) {
+      const nxDir = dx / (dist || 1);
+      const nyDir = dy / (dist || 1);
+      nx = a.x + nxDir * minDist;
+      ny = a.y + nyDir * minDist;
+      const vDotN = dummy.vx * nxDir + dummy.vy * nyDir;
+      if (vDotN < 0) {
+        dummy.vx -= vDotN * nxDir;
+        dummy.vy -= vDotN * nyDir;
+      }
+      dummy.vx *= 0.6;
+      dummy.vy *= 0.6;
+    }
+  }
+
+  // Столкновение с синим игроком — тоже твёрдое тело
+  const dx = nx - ship.x;
+  const dy = ny - ship.y;
+  const dist = Math.hypot(dx, dy);
+  const minDist = ship.radius + dummy.radius * 0.6;
+  if (dist < minDist) {
+    const nxDir = dx / (dist || 1);
+    const nyDir = dy / (dist || 1);
+    nx = ship.x + nxDir * minDist;
+    ny = ship.y + nyDir * minDist;
+    const vDotN = dummy.vx * nxDir + dummy.vy * nyDir;
+    if (vDotN < 0) {
+      dummy.vx -= vDotN * nxDir;
+      dummy.vy -= vDotN * nyDir;
+    }
+    dummy.vx *= 0.6;
+    dummy.vy *= 0.6;
+  }
+
+  dummy.x = nx;
+  dummy.y = ny;
+
+  if (dummy.x < 0) dummy.x = canvas.width;
+  if (dummy.x > canvas.width) dummy.x = 0;
+  if (dummy.y < 0) dummy.y = canvas.height;
+  if (dummy.y > canvas.height) dummy.y = 0;
+}
+
+function updateBot(dt) {
+  if (!dummy.alive || gameState !== 'playing') return;
+
+  const hasWeapon = active_hasBotWeapon();
+  let target = null;
+  let fleeing = false;
+  let holding = false; // "притворяется мишенью" — стоит на месте, подставляясь под свой дрон-камикадзе
+
+  // Секретный трюк: с обычным (временным) мечом в руке дрон-камикадзе игрока
+  // не убивает — он превращает меч в вечный "меч бога" (см. правило в update()).
+  // Поэтому пока у бота обычный меч, он не считает свой же дрон угрозой
+  // (getBotThreat это уже учитывает) — а если дрон уже летит прямо на него,
+  // бот вовсе замирает на месте, чтобы гарантированно словить касание клинком
+  // и выковать меч бога, вместо того чтобы случайно увернуться от удачи.
+  const holdingSwordOnly = dummy.active.sword && dummy.active.sword !== Infinity;
+  if (holdingSwordOnly) {
+    const incomingDrone = findNearestPlayerDrone();
+    if (incomingDrone && Math.hypot(incomingDrone.x - dummy.x, incomingDrone.y - dummy.y) < BOT_DANGER_RANGE) {
+      holding = true;
+    }
+  }
+
+  const threat = getBotThreat();
+  if (holding) {
+    // Замер на месте: не бежать, не атаковать — просто ждать дрон.
+    target = { x: dummy.x, y: dummy.y };
+  } else if (threat && !hasWeapon) {
+    // Убегаем только если совсем безоружны — вооружённый бот принимает бой
+    // и видит преимущество своего оружия, а не бежит как заяц.
+    fleeing = true;
+    const awayX = dummy.x + (dummy.x - threat.x);
+    const awayY = dummy.y + (dummy.y - threat.y);
+    target = { x: awayX, y: awayY };
+  } else if (hasWeapon) {
+    // Есть чем атаковать — сперва зачищаем угрозы, которые сам игрок
+    // расставил на поле (дрон-камикадзе, магнитная ловушка), затем идём
+    // на самого игрока.
+    const enemyDrone = findNearestPlayerDrone();
+    const enemyTrap = findNearestPlayerTrap();
+    if (enemyDrone) {
+      target = enemyDrone;
+    } else if (enemyTrap) {
+      target = enemyTrap;
+    } else {
+      target = ship;
+    }
+  } else {
+    // Нет оружия и не в опасности — добываем ближайшую свободную коробку
+    const freeCrates = crates.filter(c => !c.collected);
+    if (freeCrates.length) {
+      let best = null, bestDist = Infinity;
+      for (const c of freeCrates) {
+        const { dx, dy } = wrapDelta(dummy.x, dummy.y, c.x, c.y);
+        const d = Math.hypot(dx, dy);
+        if (d < bestDist) { bestDist = d; best = c; }
+      }
+      target = best;
+    } else {
+      target = ship;
+    }
+  }
+
+  const { dx, dy } = wrapDelta(dummy.x, dummy.y, target.x, target.y);
+  const desiredAngle = Math.atan2(dy, dx);
+  const dist = Math.hypot(dx, dy);
+
+  // При атаке бот держится на рабочей дистанции своего оружия, а не таранит
+  // игрока вплотную: стрельба бьёт издалека, меч/поле требуют умеренного
+  // сближения (чуть дальше радиуса действия), но не контакта корпусом.
+  // Дрон и ловушку игрока, наоборот, бот таранит вплотную клинком/полем —
+  // approachDist остаётся малым (по умолчанию), чтобы гарантированно их задеть.
+  let approachDist = 30;
+  if (target === ship && !fleeing) {
+    if (dummy.active.shoot) approachDist = 260;
+    else if (dummy.active.sword) approachDist = 70;
+    else if (dummy.active.shield) approachDist = 50;
+  }
+
+  // Вращение — та же механика, что у игрока: постоянное самовращение,
+  // если только ИИ не решил "нажать пробел" в эту секунду.
+  let diff = desiredAngle - dummy.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+
+  // В режиме уклонения снаряды и оружие игрока летят/бьют намного быстрее,
+  // чем обычное самовращение бота успевает довернуть его в сторону побега —
+  // поэтому при непосредственной угрозе жизни бот доворачивается мгновенно
+  // (аварийный маневр), а не ждёт медленного самовращения.
+  if (fleeing) {
+    dummy.angle = desiredAngle;
+    diff = 0;
+  }
+
+  const aimed = Math.abs(diff) < 0.7; // достаточно широкий конус наведения, чтобы не кружить вокруг цели
+  const thrusting = aimed && (fleeing || dist > approachDist);
+  dummy.thrusting = thrusting;
+
+  if (!thrusting && !fleeing) {
+    dummy.angle += ship.rotSpeed * dt;
+  }
+  if (thrusting) {
+    dummy.vx += Math.cos(dummy.angle) * ship.thrust * dt;
+    dummy.vy += Math.sin(dummy.angle) * ship.thrust * dt;
+  }
+
+  // Замерев в ожидании своего дрона-камикадзе, бот активно гасит инерцию,
+  // чтобы действительно стоять на месте, а не дрейфовать по полю.
+  if (holding) {
+    dummy.vx *= 0.9;
+    dummy.vy *= 0.9;
+  }
+
+  // На боевой дистанции бот активно тормозит инерцию, а не просто отпускает тягу —
+  // иначе он проскакивает рабочую дистанцию по инерции и таранит цель вплотную.
+  if (target === ship && !fleeing && !thrusting && dist < approachDist * 1.4) {
+    const dirX = dist > 5 ? dx / dist : 0, dirY = dist > 5 ? dy / dist : 0;
+    const closingSpeed = dummy.vx * dirX + dummy.vy * dirY;
+    if (closingSpeed > 0) {
+      dummy.vx -= dirX * closingSpeed * Math.min(1, ship.thrust * dt / Math.max(closingSpeed, 1));
+      dummy.vy -= dirY * closingSpeed * Math.min(1, ship.thrust * dt / Math.max(closingSpeed, 1));
+    }
+  }
+
+  dummy.vx *= ship.friction;
+  dummy.vy *= ship.friction;
+
+  // Гасим боковую (тангенциальную к направлению на цель) скорость,
+  // чтобы бот не облетал цель по орбите, а сближался с ней.
+  if (dist > 5) {
+    const dirX = dx / dist, dirY = dy / dist;
+    const tangX = -dirY, tangY = dirX;
+    const tangSpeed = dummy.vx * tangX + dummy.vy * tangY;
+    dummy.vx -= tangSpeed * tangX * 0.6 * dt * 6;
+    dummy.vy -= tangSpeed * tangY * 0.6 * dt * 6;
+  }
+
+  const speed = Math.hypot(dummy.vx, dummy.vy);
+  if (speed > ship.maxSpeed) {
+    dummy.vx = (dummy.vx / speed) * ship.maxSpeed;
+    dummy.vy = (dummy.vy / speed) * ship.maxSpeed;
+  }
+
+  let nx = dummy.x + dummy.vx * dt;
+  let ny = dummy.y + dummy.vy * dt;
+
+  // Бот тоже не пролетает сквозь угловые астероиды
+  for (const a of cornerAsteroids) {
+    const adx = nx - a.x;
+    const ady = ny - a.y;
+    const adist = Math.hypot(adx, ady);
+    const minDist = a.radius + dummy.radius * 0.6;
+    if (adist < minDist) {
+      const nxDir = adx / (adist || 1);
+      const nyDir = ady / (adist || 1);
+      nx = a.x + nxDir * minDist;
+      ny = a.y + nyDir * minDist;
+      const vDotN = dummy.vx * nxDir + dummy.vy * nyDir;
+      if (vDotN < 0) {
+        dummy.vx -= vDotN * nxDir;
+        dummy.vy -= vDotN * nyDir;
+      }
+      dummy.vx *= 0.6;
+      dummy.vy *= 0.6;
+    }
+  }
+
+  dummy.x = nx;
+  dummy.y = ny;
+
+  if (dummy.x < 0) dummy.x = canvas.width;
+  if (dummy.x > canvas.width) dummy.x = 0;
+  if (dummy.y < 0) dummy.y = canvas.height;
+  if (dummy.y > canvas.height) dummy.y = 0;
+}
+
+function update(dt) {
+  const thrusting = !!keys['Space'];
+
+  if (!thrusting) {
+    ship.angle += ship.rotSpeed * dt;
+  }
+  if (thrusting) {
+    ship.vx += Math.cos(ship.angle) * ship.thrust * dt;
+    ship.vy += Math.sin(ship.angle) * ship.thrust * dt;
+  }
+
+  ship.vx *= ship.friction;
+  ship.vy *= ship.friction;
+
+  const speed = Math.hypot(ship.vx, ship.vy);
+  if (speed > ship.maxSpeed) {
+    ship.vx = (ship.vx / speed) * ship.maxSpeed;
+    ship.vy = (ship.vy / speed) * ship.maxSpeed;
+  }
+
+  let nx = ship.x + ship.vx * dt;
+  let ny = ship.y + ship.vy * dt;
+
+  for (const a of cornerAsteroids) {
+    const dx = nx - a.x;
+    const dy = ny - a.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = a.radius + ship.radius * 0.6;
+    if (dist < minDist) {
+      const nxDir = dx / (dist || 1);
+      const nyDir = dy / (dist || 1);
+      nx = a.x + nxDir * minDist;
+      ny = a.y + nyDir * minDist;
+      const vDotN = ship.vx * nxDir + ship.vy * nyDir;
+      if (vDotN < 0) {
+        ship.vx -= vDotN * nxDir;
+        ship.vy -= vDotN * nyDir;
+      }
+      ship.vx *= 0.6;
+      ship.vy *= 0.6;
+    }
+  }
+
+  // Манекен твёрдый — сквозь него нельзя пролететь
+  if (dummy.alive) {
+    const dx = nx - dummy.x;
+    const dy = ny - dummy.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = dummy.radius + ship.radius * 0.6;
+    if (dist < minDist) {
+      const nxDir = dx / (dist || 1);
+      const nyDir = dy / (dist || 1);
+      nx = dummy.x + nxDir * minDist;
+      ny = dummy.y + nyDir * minDist;
+      const vDotN = ship.vx * nxDir + ship.vy * nyDir;
+      if (vDotN < 0) {
+        ship.vx -= vDotN * nxDir;
+        ship.vy -= vDotN * nyDir;
+      }
+      ship.vx *= 0.6;
+      ship.vy *= 0.6;
+    }
+  }
+
+  ship.x = nx;
+  ship.y = ny;
+
+  // Перенос на другую сторону сразу, как центр корабля пересекает край экрана —
+  // корабль никогда не уходит из вида больше чем наполовину.
+  if (ship.x < 0) ship.x = canvas.width;
+  if (ship.x > canvas.width) ship.x = 0;
+  if (ship.y < 0) ship.y = canvas.height;
+  if (ship.y > canvas.height) ship.y = 0;
+
+  for (const a of cornerAsteroids) {
+    a.rot += a.rotSpeed * dt;
+  }
+
+  if (twoPlayerMode) {
+    updatePlayer2(dt);
+  } else {
+    updateBot(dt);
+  }
+
+  // Турели: спавн раз в 30с, стрельба крестом по игроку
+  turretSpawnTimer += dt;
+  if (turretSpawnTimer >= TURRET_SPAWN_INTERVAL) {
+    turretSpawnTimer = 0;
+    spawnTurret();
+  }
+  for (const t of turrets) {
+    if (t.spawnAnim < 1) t.spawnAnim += dt * 1.5;
+
+    // Вечный пасхалочный меч (любого игрока) захватывает турель касанием
+    // клинка — она перестаёт бить захватившего, но продолжает стрелять крестом.
+    // Перезахват разрешён: другая сторона может отбить турель обратно.
+    if (t.alliedOwner !== 'player' && active.sword === Infinity) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(ship);
+      if (distToSegment(t.x, t.y, hiltX, hiltY, tipX, tipY) < TURRET_RADIUS + 6) {
+        t.alliedOwner = 'player';
+        spawnEasterEggFx(t.x, t.y, '#2ad4ff', 'ЗАХВАЧЕНА');
+      }
+    }
+    if (t.alliedOwner !== 'bot' && twoPlayerMode && dummy.active.sword === Infinity && dummy.alive) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(dummy);
+      if (distToSegment(t.x, t.y, hiltX, hiltY, tipX, tipY) < TURRET_RADIUS + 6) {
+        t.alliedOwner = 'bot';
+        spawnEasterEggFx(t.x, t.y, '#ff5e3a', 'ЗАХВАЧЕНА');
+      }
+    }
+
+    t.fireCooldown -= dt;
+    if (t.fireCooldown <= 0) {
+      t.fireCooldown = TURRET_FIRE_INTERVAL;
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      for (const [dxDir, dyDir] of dirs) {
+        bullets.push({
+          x: t.x + dxDir * (TURRET_RADIUS + 6),
+          y: t.y + dyDir * (TURRET_RADIUS + 6),
+          vx: dxDir * 380,
+          vy: dyDir * 380,
+          angle: Math.atan2(dyDir, dxDir),
+          life: 3,
+          owner: 'turret',
+          alliedOwner: t.alliedOwner,
+        });
+      }
+    }
+  }
+
+  // Магнитные ловушки: статичные точки, тянут ЧУЖОЙ корабль, только если он внутри их радиуса
+  for (const trap of magnetTraps) {
+    const target = trap.owner === 'player' ? dummy : ship;
+    if (trap.owner !== 'player' && gameState !== 'playing') continue;
+    if (target === dummy && !dummy.alive) continue;
+    const dx = trap.x - target.x;
+    const dy = trap.y - target.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    if (dist < trap.radius && dist > target.radius * 0.5) {
+      const pull = 110; // px/сек^2
+      if (target === dummy) {
+        dummy.x += (dx / dist) * pull * dt;
+        dummy.y += (dy / dist) * pull * dt;
+      } else {
+        ship.vx += (dx / dist) * pull * dt;
+        ship.vy += (dy / dist) * pull * dt;
+      }
+    }
+  }
+
+  // Таймеры способностей игрока
+  for (const key of Object.keys(active)) {
+    if (active[key] === Infinity) continue;
+    active[key] -= dt;
+    if (active[key] <= 0) delete active[key];
+  }
+  renderPowerupTray();
+
+  // Таймеры способностей бота
+  for (const key of Object.keys(dummy.active)) {
+    if (dummy.active[key] === Infinity) continue;
+    dummy.active[key] -= dt;
+    if (dummy.active[key] <= 0) delete dummy.active[key];
+  }
+
+  // Коробки: вращение и подбор (и игроком, и ботом)
+  for (const c of crates) {
+    if (c.collected) {
+      if (c.collectAnim < 1) c.collectAnim += dt * 2.2;
+      continue;
+    }
+    c.spin += dt * 1.5;
+
+    const distPlayer = Math.hypot(ship.x - c.x, ship.y - c.y);
+    const distBot = dummy.alive ? Math.hypot(dummy.x - c.x, dummy.y - c.y) : Infinity;
+
+    let winner = null;
+    if (distPlayer < ship.radius * 0.7 + 18) winner = 'player';
+    else if (distBot < dummy.radius * 0.7 + 18) winner = 'bot';
+
+    if (winner) {
+      c.collected = true;
+      const key = pickRandomPowerupKey();
+      c.chosenKey = key;
+      grantPowerup(winner, key, c.x, c.y);
+      spawnBurst(c.x, c.y, winner === 'player' ? '#9be7ff' : '#ff9a6a', 16);
+      refillCrates();
+    }
+  }
+
+  // Стрельба ракетами — игрок
+  if (active.shoot) {
+    shootCooldown -= dt;
+    if (shootCooldown <= 0) {
+      shootCooldown = 0.75;
+      bullets.push({
+        x: ship.x + Math.cos(ship.angle) * (ship.radius + 6),
+        y: ship.y + Math.sin(ship.angle) * (ship.radius + 6),
+        vx: Math.cos(ship.angle) * 480,
+        vy: Math.sin(ship.angle) * 480,
+        angle: ship.angle,
+        life: 2.2,
+        owner: 'player',
+      });
+    }
+  } else {
+    shootCooldown = 0;
+  }
+
+  // Стрельба ракетами — бот
+  if (dummy.active.shoot && dummy.alive) {
+    dummy.shootCooldown -= dt;
+    if (dummy.shootCooldown <= 0) {
+      dummy.shootCooldown = 0.75;
+      bullets.push({
+        x: dummy.x + Math.cos(dummy.angle) * (dummy.radius + 6),
+        y: dummy.y + Math.sin(dummy.angle) * (dummy.radius + 6),
+        vx: Math.cos(dummy.angle) * 480,
+        vy: Math.sin(dummy.angle) * 480,
+        angle: dummy.angle,
+        life: 2.2,
+        owner: 'bot',
+      });
+    }
+  } else {
+    dummy.shootCooldown = 0;
+  }
+
+  bullets = bullets.filter(b => b.life > 0);
+  for (const b of bullets) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+
+    // Вечный пасхалочный меч рикошетит ВРАЖДЕБНЫЕ снаряды (бота и нейтральной
+    // турели): при касании клинка они разворачиваются и летят обратно моим
+    // цветом. Снаряды уже захваченной мной турели — свои, их не рикошетят.
+    if (active.sword === Infinity && (b.owner === 'bot' || (b.owner === 'turret' && b.alliedOwner !== 'player'))) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(ship);
+      if (distToSegment(b.x, b.y, hiltX, hiltY, tipX, tipY) < 10) {
+        b.owner = 'player';
+        b.alliedOwner = 'player'; // на случай, если это был снаряд турели
+        b.vx = -b.vx;
+        b.vy = -b.vy;
+        b.angle = Math.atan2(b.vy, b.vx);
+        spawnBurst(b.x, b.y, '#6fd6ff', 8);
+        continue;
+      }
+    }
+    if (twoPlayerMode && dummy.active.sword === Infinity && dummy.alive &&
+        (b.owner === 'player' || (b.owner === 'turret' && b.alliedOwner !== 'bot'))) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(dummy);
+      if (distToSegment(b.x, b.y, hiltX, hiltY, tipX, tipY) < 10) {
+        b.owner = 'bot';
+        b.alliedOwner = 'bot';
+        b.vx = -b.vx;
+        b.vy = -b.vy;
+        b.angle = Math.atan2(b.vy, b.vx);
+        spawnBurst(b.x, b.y, '#ff5e3a', 8);
+        continue;
+      }
+    }
+
+    if (b.owner === 'player' && dummy.alive && Math.hypot(b.x - dummy.x, b.y - dummy.y) < dummy.radius + 6) {
+      b.life = 0;
+      killDummy();
+    }
+    if (b.owner === 'bot' && gameState === 'playing' && Math.hypot(b.x - ship.x, b.y - ship.y) < ship.radius + 6) {
+      b.life = 0;
+      killPlayer();
+    }
+    // Турель не бьёт того, кто её захватил, но бьёт другую сторону
+    if (b.owner === 'turret' && b.alliedOwner !== 'player' && gameState === 'playing' &&
+        Math.hypot(b.x - ship.x, b.y - ship.y) < ship.radius + 6) {
+      b.life = 0;
+      killPlayer();
+    }
+    if (b.owner === 'turret' && b.alliedOwner !== 'bot' && dummy.alive &&
+        Math.hypot(b.x - dummy.x, b.y - dummy.y) < dummy.radius + 6) {
+      b.life = 0;
+      killDummy();
+    }
+  }
+
+  // Столкновение мечей БОГА (оба Infinity): вместо обычного взаимного урона —
+  // нейтральный взрыв с пулями со всех стен арены к точке столкновения клинков.
+  // Срабатывает ОДИН РАЗ за контакт — пока клинки продолжают пересекаться
+  // (несколько кадров подряд), повторный взрыв не запускается.
+  let godSwordClash = false;
+  if (active.sword === Infinity && dummy.active.sword === Infinity && dummy.alive && gameState === 'playing') {
+    const playerBlade = getSwordSegment(ship);
+    const botBlade = getSwordSegment(dummy);
+    const hit = segmentIntersection(
+      playerBlade.hiltX, playerBlade.hiltY, playerBlade.tipX, playerBlade.tipY,
+      botBlade.hiltX, botBlade.hiltY, botBlade.tipX, botBlade.tipY
+    );
+    if (hit) {
+      godSwordClash = true;
+      if (!godSwordClashActive) {
+        godSwordClashActive = true;
+        spawnGodSwordClash(hit.x, hit.y);
+      }
+    } else {
+      godSwordClashActive = false;
+    }
+  } else {
+    godSwordClashActive = false;
+  }
+
+  // Меч бога не может убить противника, у которого тоже меч бога —
+  // единственный исход их встречи — взрыв клинков выше, никогда прямой урон.
+  const bothGodSwords = active.sword === Infinity && dummy.active.sword === Infinity;
+
+  // Лазерный меч игрока: смерть бота только при касании клинка (не корпуса корабля)
+  if (!godSwordClash && !bothGodSwords && active.sword && dummy.alive) {
+    const { hiltX, hiltY, tipX, tipY } = getSwordSegment(ship);
+    if (distToSegment(dummy.x, dummy.y, hiltX, hiltY, tipX, tipY) < dummy.radius + 6) {
+      killDummy();
+    }
+  }
+
+  // Лазерный меч бота: смерть игрока при касании клинка бота
+  if (!godSwordClash && !bothGodSwords && dummy.active.sword && dummy.alive && gameState === 'playing') {
+    const { hiltX, hiltY, tipX, tipY } = getSwordSegment(dummy);
+    if (distToSegment(ship.x, ship.y, hiltX, hiltY, tipX, tipY) < ship.radius + 6) {
+      killPlayer();
+    }
+  }
+
+  // Силовое поле игрока: смерть бота при касании поля вокруг корабля
+  if (active.shield && dummy.alive) {
+    if (Math.hypot(ship.x - dummy.x, ship.y - dummy.y) < ship.radius + dummy.radius + 26) {
+      killDummy();
+    }
+  }
+
+  // Силовое поле бота: смерть игрока при касании поля вокруг бота
+  if (dummy.active.shield && dummy.alive && gameState === 'playing') {
+    if (Math.hypot(ship.x - dummy.x, ship.y - dummy.y) < ship.radius + dummy.radius + 26) {
+      killPlayer();
+    }
+  }
+
+  // Дроны-помощники: летят к цели владельца, убивают при касании, живут 7с
+  drones = drones.filter(d => d.life > 0);
+  for (const d of drones) {
+    d.life -= dt;
+    const target = d.owner === 'player' ? dummy : ship;
+    if (d.owner === 'bot' && gameState !== 'playing') continue;
+    if (target === dummy && !dummy.alive) continue;
+    const dx = target.x - d.x;
+    const dy = target.y - d.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const speedD = 160;
+    d.vx = (dx / dist) * speedD;
+    d.vy = (dy / dist) * speedD;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    if (dist < d.radius + target.radius) {
+      const isPlayerTarget = target === ship;
+      const targetActive = isPlayerTarget ? active : dummy.active;
+
+      // Секретное правило: погибая от дрона-камикадзе с обычным мечом в руке,
+      // цель не умирает — её меч становится "мечом бога" (вечным) на этот
+      // раунд и ещё 2 следующих, а вокруг неё закручиваются звёзды.
+      if (targetActive.sword && targetActive.sword !== Infinity) {
+        targetActive.sword = Infinity;
+        d.life = 0;
+        spawnGodSwordFx(target);
+        if (isPlayerTarget) {
+          godSwordRoundsPlayer = 2; // этот раунд (уже активен) + 2 следующих
+          renderPowerupTray();
+        } else {
+          godSwordRoundsBot = 2;
+        }
+        continue;
+      }
+
+      if (target === dummy) killDummy();
+      else killPlayer();
+    }
+  }
+
+  // Вражеский дрон бота уничтожается моим оружием (меч/поле/снаряды/мой дрон)
+  // или нейтральной турелью, которая бьёт по любым дронам без разбора.
+  // ИСКЛЮЧЕНИЕ: вечный пасхалочный меч (Space+L) не убивает дрон, а
+  // перетягивает его на мою сторону касанием клинка.
+  const botDrones = drones.filter(d => d.owner === 'bot' && d.life > 0);
+  for (const bd of botDrones) {
+    if (active.sword === Infinity) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(ship);
+      if (distToSegment(bd.x, bd.y, hiltX, hiltY, tipX, tipY) < bd.radius + 6) {
+        bd.owner = 'player';
+        spawnEasterEggFx(bd.x, bd.y, '#2ad4ff', 'ЗАХВАЧЕН');
+        continue;
+      }
+    }
+
+    let destroyed = false;
+
+    if (active.sword) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(ship);
+      if (distToSegment(bd.x, bd.y, hiltX, hiltY, tipX, tipY) < bd.radius + 6) destroyed = true;
+    }
+    if (!destroyed && active.shield &&
+        Math.hypot(ship.x - bd.x, ship.y - bd.y) < ship.radius + bd.radius + 26) {
+      destroyed = true;
+    }
+    if (!destroyed) {
+      for (const b of bullets) {
+        if ((b.owner === 'player' || b.owner === 'turret') && Math.hypot(b.x - bd.x, b.y - bd.y) < bd.radius + 6) {
+          b.life = 0;
+          destroyed = true;
+          break;
+        }
+      }
+    }
+    if (!destroyed) {
+      for (const myDrone of drones) {
+        if (myDrone.owner === 'player' && Math.hypot(myDrone.x - bd.x, myDrone.y - bd.y) < myDrone.radius + bd.radius) {
+          destroyed = true;
+          break;
+        }
+      }
+    }
+
+    if (destroyed) {
+      bd.life = 0;
+      spawnBurst(bd.x, bd.y, '#ff8a4c', 14);
+    }
+  }
+
+  // Мой дрон тоже может быть уничтожен нейтральной турелью, а в режиме
+  // 2 игроков — захвачен мечом бога красного (симметрично захвату синим).
+  const playerDrones = drones.filter(d => d.owner === 'player' && d.life > 0);
+  for (const pd of playerDrones) {
+    if (twoPlayerMode && dummy.active.sword === Infinity && dummy.alive) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(dummy);
+      if (distToSegment(pd.x, pd.y, hiltX, hiltY, tipX, tipY) < pd.radius + 6) {
+        pd.owner = 'bot';
+        spawnEasterEggFx(pd.x, pd.y, '#ff5e3a', 'ЗАХВАЧЕН');
+        continue;
+      }
+    }
+    for (const b of bullets) {
+      if (b.owner === 'turret' && Math.hypot(b.x - pd.x, b.y - pd.y) < pd.radius + 6) {
+        b.life = 0;
+        pd.life = 0;
+        spawnBurst(pd.x, pd.y, '#c86fff', 14);
+        break;
+      }
+    }
+  }
+
+  drones = drones.filter(d => d.life > 0);
+
+  // Обе магнитные ловушки уничтожаемы — своим оружием противник может
+  // снести и мою ловушку, и я могу снести его (симметричные правила).
+  // ИСКЛЮЧЕНИЕ: мой вечный пасхалочный меч (Space+L) не уничтожает вражескую
+  // ловушку, а перетягивает её на мою сторону касанием клинка.
+  for (const trap of magnetTraps) {
+    if (trap.destroyed) continue;
+
+    if (trap.owner === 'bot' && active.sword === Infinity) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(ship);
+      if (distToSegment(trap.x, trap.y, hiltX, hiltY, tipX, tipY) < 24) {
+        trap.owner = 'player';
+        spawnEasterEggFx(trap.x, trap.y, '#2ad4ff', 'ЗАХВАЧЕНА');
+        continue;
+      }
+    }
+    // Симметрично: в режиме 2 игроков красный мечом бога захватывает ловушку игрока.
+    if (trap.owner === 'player' && twoPlayerMode && dummy.active.sword === Infinity && dummy.alive) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(dummy);
+      if (distToSegment(trap.x, trap.y, hiltX, hiltY, tipX, tipY) < 24) {
+        trap.owner = 'bot';
+        spawnEasterEggFx(trap.x, trap.y, '#ff5e3a', 'ЗАХВАЧЕНА');
+        continue;
+      }
+    }
+
+    const attacker = trap.owner === 'player' ? 'bot' : 'player';
+    const atkShip = attacker === 'player' ? ship : dummy;
+    const atkActive = attacker === 'player' ? active : dummy.active;
+    let destroyed = false;
+
+    if (atkActive.sword) {
+      const { hiltX, hiltY, tipX, tipY } = getSwordSegment(atkShip);
+      if (distToSegment(trap.x, trap.y, hiltX, hiltY, tipX, tipY) < 24) destroyed = true;
+    }
+    if (!destroyed && atkActive.shield &&
+        Math.hypot(atkShip.x - trap.x, atkShip.y - trap.y) < atkShip.radius + 26 + 18) {
+      destroyed = true;
+    }
+    if (!destroyed) {
+      for (const b of bullets) {
+        if ((b.owner === attacker || b.owner === 'turret') && Math.hypot(b.x - trap.x, b.y - trap.y) < 20) {
+          b.life = 0;
+          destroyed = true;
+          break;
+        }
+      }
+    }
+    if (!destroyed) {
+      for (const dr of drones) {
+        if (dr.owner === attacker && Math.hypot(dr.x - trap.x, dr.y - trap.y) < dr.radius + 20) {
+          destroyed = true;
+          break;
+        }
+      }
+    }
+
+    if (destroyed) {
+      trap.destroyed = true;
+      spawnBurst(trap.x, trap.y, trap.owner === 'player' ? '#ff8a4c' : '#9be7ff', 18);
+    }
+  }
+  magnetTraps = magnetTraps.filter(t => !t.destroyed);
+  bullets = bullets.filter(b => b.life > 0);
+
+  updateParticles(dt);
+  updateEasterEggFx(dt);
+  updateGodSwordFx(dt);
+}
+
+function drawBackground() {
+  if (bgPattern) {
+    ctx.fillStyle = bgPattern;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(5, 1, 10, 0.55)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.fillStyle = '#0a0414';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function drawShip() {
+
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(ship.angle + Math.PI / 2);
+  const w = 52, h = 52;
+
+  if (keys['Space']) {
+    ctx.save();
+    ctx.translate(0, h / 2);
+    ctx.beginPath();
+    const flameLen = 14 + Math.random() * 10;
+    ctx.moveTo(-6, 0);
+    ctx.lineTo(6, 0);
+    ctx.lineTo(0, flameLen);
+    ctx.closePath();
+    ctx.fillStyle = Math.random() > 0.5 ? '#ffb347' : '#ff5e3a';
+    ctx.shadowColor = '#ff8c42';
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (shipImg.complete && shipImg.naturalWidth) {
+    ctx.drawImage(shipImg, -w / 2, -h / 2, w, h);
+  } else {
+    ctx.fillStyle = '#9be7ff';
+    ctx.beginPath();
+    ctx.moveTo(0, -20);
+    ctx.lineTo(14, 16);
+    ctx.lineTo(-14, 16);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Силовое поле — визуальная сфера вокруг корабля
+  if (active.shield) {
+    ctx.save();
+    ctx.translate(ship.x, ship.y);
+    const pulse = 26 + Math.sin(performance.now() / 150) * 3;
+    ctx.strokeStyle = 'rgba(111, 214, 255, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#6fd6ff';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(0, 0, pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Лазерный меч — визуальный клинок из носа (без анимации, фиксированная длина)
+  if (active.sword) {
+    ctx.save();
+    ctx.translate(ship.x, ship.y);
+    ctx.rotate(ship.angle);
+    const len = 90;
+    ctx.strokeStyle = '#2ad4ff';
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#2ad4ff';
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(ship.radius, 0);
+    ctx.lineTo(ship.radius + len, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+}
+
+function drawBotEffects() {
+  if (!dummy.alive) return;
+
+  if (dummy.active.shield) {
+    ctx.save();
+    ctx.translate(dummy.x, dummy.y);
+    const pulse = 26 + Math.sin(performance.now() / 150) * 3;
+    ctx.strokeStyle = 'rgba(255, 138, 106, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#ff8a6a';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(0, 0, pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (dummy.active.sword) {
+    ctx.save();
+    ctx.translate(dummy.x, dummy.y);
+    ctx.rotate(dummy.angle);
+    const len = 90;
+    ctx.strokeStyle = '#ff5e3a';
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#ff5e3a';
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(dummy.radius, 0);
+    ctx.lineTo(dummy.radius + len, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawMagnetTraps() {
+  for (const trap of magnetTraps) {
+    const color = trap.owner === 'player' ? '#2ad4ff' : '#ff8a4c';
+    const colorRgb = trap.owner === 'player' ? '111, 214, 255' : '255, 138, 76';
+    ctx.save();
+    ctx.translate(trap.x, trap.y);
+
+    // пульсирующие волны притяжения по радиусу действия
+    for (let i = 0; i < 3; i++) {
+      const t = ((performance.now() / 900) + i / 3) % 1;
+      ctx.strokeStyle = `rgba(${colorRgb}, ${(1 - t) * 0.6})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, t * trap.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // здание ловушки — видно издалека, где она стоит
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    const bob = Math.sin(performance.now() / 600) * 3;
+    if (trapStationImg.complete && trapStationImg.naturalWidth) {
+      const w = 42, h = 42 * (trapStationImg.height / trapStationImg.width || 1);
+      ctx.drawImage(trapStationImg, -w / 2, -h / 2 + bob, w, h);
+    } else {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, bob, 16, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawCornerAsteroids() {
+  for (const a of cornerAsteroids) {
+    ctx.save();
+    ctx.translate(a.x, a.y);
+    ctx.rotate(a.rot);
+    const size = a.radius * 2.1;
+    if (a.img.complete && a.img.naturalWidth) {
+      ctx.drawImage(a.img, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.fillStyle = '#8a8a8a';
+      ctx.beginPath();
+      ctx.arc(0, 0, a.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function drawCrate(c) {
+  const size = 34;
+  if (c.collected) {
+    if (c.collectAnim >= 1) return;
+    const t = c.collectAnim;
+    ctx.save();
+    ctx.translate(c.x, c.y - t * 20);
+    ctx.rotate(t * Math.PI * 3);
+    ctx.globalAlpha = 1 - t;
+    const s = size * (1 + t * 0.6);
+    drawCrateBox(s);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    return;
+  }
+  ctx.save();
+  ctx.translate(c.x, c.y + Math.sin(c.spin) * 3);
+  drawCrateBox(size);
+  ctx.restore();
+}
+
+function drawCrateBox(s) {
+  ctx.shadowColor = '#ffd76a';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = '#3a2e18';
+  ctx.strokeStyle = '#ffd76a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(-s/2, -s/2, s, s, 6) : ctx.rect(-s/2, -s/2, s, s);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffd76a';
+  ctx.font = `bold ${Math.round(s * 0.6)}px 'Courier New', monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('?', 0, 1);
+}
+
+function drawCrates() {
+  for (const c of crates) drawCrate(c);
+}
+
+function drawBullets() {
+  for (const b of bullets) {
+    const isClash = b.sizeScale !== undefined;
+    const isPlayer = b.owner === 'player' || (b.owner === 'turret' && b.alliedOwner === 'player');
+    const isTurret = b.owner === 'turret' && !b.alliedOwner;
+    const img = isPlayer ? laserImg : laserBotImg;
+    const glow = isClash ? '#ffffff' : (isPlayer ? '#6fd6ff' : (isTurret ? '#c86fff' : '#ff5e3a'));
+    const scale = b.sizeScale || 1;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.angle + Math.PI / 2);
+    const w = 10 * scale, h = 24 * scale;
+    if (img.complete && img.naturalWidth) {
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = 10;
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    } else {
+      ctx.fillStyle = glow;
+      ctx.fillRect(-2 * scale, -10 * scale, 4 * scale, 20 * scale);
+    }
+    ctx.restore();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawDrones() {
+  for (const d of drones) {
+    const isPlayer = d.owner === 'player';
+    const img = isPlayer ? droneImg : droneBotImg;
+    const glow = isPlayer ? '#6fd6ff' : '#ff5e3a';
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    const angle = Math.atan2(d.vy, d.vx);
+    ctx.rotate(angle + Math.PI / 2);
+    const size = 30;
+    const flicker = d.life < 1.5 ? (Math.sin(performance.now() / 60) > 0 ? 1 : 0.3) : 1;
+    ctx.globalAlpha = flicker;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = 10;
+    if (img.complete && img.naturalWidth) {
+      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawDummy() {
+  if (!dummy.alive) return;
+  ctx.save();
+  ctx.translate(dummy.x, dummy.y);
+  ctx.rotate(dummy.angle + Math.PI / 2);
+  const size = 52;
+
+  if (dummy.thrusting) {
+    ctx.save();
+    ctx.translate(0, size / 2);
+    ctx.beginPath();
+    const flameLen = 14 + Math.random() * 10;
+    ctx.moveTo(-6, 0);
+    ctx.lineTo(6, 0);
+    ctx.lineTo(0, flameLen);
+    ctx.closePath();
+    ctx.fillStyle = Math.random() > 0.5 ? '#ffb347' : '#ff5e3a';
+    ctx.shadowColor = '#ff8c42';
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (dummyImg.complete && dummyImg.naturalWidth) {
+    ctx.drawImage(dummyImg, -size / 2, -size / 2, size, size);
+  } else {
+    ctx.fillStyle = '#ff5e5e';
+    ctx.beginPath();
+    ctx.arc(0, 0, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawTurrets() {
+  for (const t of turrets) {
+    const color = t.alliedOwner === 'player' ? '#2ad4ff' : (t.alliedOwner === 'bot' ? '#ff5e3a' : '#c86fff');
+    const colorRgb = t.alliedOwner === 'player' ? '42, 212, 255' : (t.alliedOwner === 'bot' ? '255, 94, 58' : '200, 111, 255');
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    const scale = Math.min(1, t.spawnAnim);
+    ctx.scale(scale, scale);
+
+    // пульсирующее предупреждающее свечение
+    const pulse = 4 + Math.sin(performance.now() / 200) * 3;
+    ctx.strokeStyle = `rgba(${colorRgb}, 0.5)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, TURRET_RADIUS + pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 14;
+    const size = TURRET_RADIUS * 2;
+    if (turretImg.complete && turretImg.naturalWidth) {
+      ctx.drawImage(turretImg, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 0, TURRET_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function draw() {
+  drawBackground();
+  drawCornerAsteroids();
+  drawMagnetTraps();
+  drawTurrets();
+  drawCrates();
+  drawDummy();
+  drawBotEffects();
+  drawBullets();
+  drawDrones();
+  drawParticles();
+  if (gameState !== 'menu') drawShip();
+  drawGodSwordFx();
+  drawEasterEggFx();
+}
+
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  if (gameState === 'playing') {
+    update(dt);
+  } else {
+    updateParticles(dt);
+    for (const a of cornerAsteroids) a.rot += a.rotSpeed * dt;
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// --- Управление состояниями ---
+function startGame(isTwoPlayer) {
+  gameState = 'playing';
+  twoPlayerMode = !!isTwoPlayer;
+  active = {};
+  bullets = [];
+  drones = [];
+  crates = [];
+  magnetTraps = [];
+  turrets = [];
+  turretSpawnTimer = 0;
+  particles = [];
+  easterEggFx = [];
+  godSwordFx = [];
+  godSwordClashActive = false;
+  shootCooldown = 0;
+  resetShip();
+  resetDummy();
+  refillCrates();
+  aimDummyAtNearestCrate();
+
+  // "Меч бога" переживает рестарт раунда: если счётчик ещё не истёк,
+  // выдаём вечный меч сразу на старте и списываем один раунд.
+  if (godSwordRoundsPlayer > 0) {
+    active.sword = Infinity;
+    godSwordRoundsPlayer--;
+  }
+  if (godSwordRoundsBot > 0) {
+    dummy.active.sword = Infinity;
+    godSwordRoundsBot--;
+  }
+
+  document.getElementById('bossLabel').textContent = twoPlayerMode ? 'ИГРОК 2' : 'МАНЕКЕН';
+  document.getElementById('bossStatus').textContent = 'ЖИВ';
+  renderPowerupTray();
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('winScreen').classList.add('hidden');
+  document.getElementById('loseScreen').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+}
+
+function winGame() {
+  gameState = 'won';
+  document.getElementById('bossStatus').textContent = 'УНИЧТОЖЕН';
+  document.getElementById('winTitle').textContent = twoPlayerMode ? 'СИНИЙ ПОБЕДИЛ!' : 'МАНЕКЕН УНИЧТОЖЕН!';
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('winScreen').classList.remove('hidden');
+}
+
+function loseGame() {
+  gameState = 'lost';
+  document.getElementById('loseTitle').textContent = twoPlayerMode ? 'КРАСНЫЙ ПОБЕДИЛ!' : 'ТЫ УНИЧТОЖЕН';
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('loseScreen').classList.remove('hidden');
+}
+
+/** Из экрана победы/поражения — назад в меню игры (не перезапуская бой). */
+function backToGameMenu() {
+  gameState = 'menu';
+  document.getElementById('winScreen').classList.add('hidden');
+  document.getElementById('loseScreen').classList.add('hidden');
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('menu').classList.remove('hidden');
+}
+
+document.getElementById('playBtn').addEventListener('click', () => startGame(false));
+document.getElementById('play2pBtn').addEventListener('click', () => startGame(true));
+document.getElementById('restartBtn').addEventListener('click', () => startGame(twoPlayerMode));
+document.getElementById('retryBtn').addEventListener('click', () => startGame(twoPlayerMode));
+document.getElementById('winMenuBtn').addEventListener('click', backToGameMenu);
+document.getElementById('loseMenuBtn').addEventListener('click', backToGameMenu);
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
