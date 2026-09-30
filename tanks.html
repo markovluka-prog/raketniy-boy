@@ -221,23 +221,6 @@
     max-width: 90vw;
   }
   #controlHint.hidden { display: none; }
-
-  #flagWarn {
-    position: fixed;
-    top: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 5;
-    padding: 6px 18px;
-    font-size: 13px;
-    font-weight: bold;
-    letter-spacing: 1px;
-    color: #ffe08c;
-    background: rgba(70, 50, 0, 0.55);
-    border: 1px solid rgba(255, 224, 140, 0.5);
-    border-radius: 999px;
-  }
-  #flagWarn.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -245,23 +228,20 @@
 <canvas id="game"></canvas>
 
 <div id="hud" class="hidden">
-  <div id="scoreWrap" class="hud-pill">🚩 ТЫ: <span id="myFlagStatus">на базе</span> · ВРАГ: <span id="enemyFlagStatus">на базе</span></div>
-  <div id="turretWrap" class="hud-pill">🔫 Турель: <span id="turretOwner">ничья</span></div>
+  <div id="scoreWrap" class="hud-pill">🎯 ТЫ: <span id="myKills">0</span> · ВРАГ: <span id="enemyKills">0</span> (до 3)</div>
   <div id="ammoWrap"><span>🚀</span><div id="ammoBar"></div></div>
   <div id="powerupWrap" class="hidden">⚡ <span id="powerupLabel"></span>: <span id="powerupTime"></span>с</div>
 </div>
 
-<div id="flagWarn" class="hidden">Твой флаг похищен — врагу нельзя нести чужой, пока не вернёшь свой!</div>
-
-<div id="controlHint" class="hidden">Крутится сам · Space — вперёд + ракета · S — сбросить флаг · M — поставить мину (если есть)</div>
+<div id="controlHint" class="hidden">Крутится сам · Space — вперёд + ракета · M — поставить мину (если есть)</div>
 
 <div id="menu">
   <div id="menuTankWrap"><img src="assets/tanks/remastered/PNG/Default size/tank_blue.png" alt="Танк"></div>
-  <div id="title">ЗАХВАТ ФЛАГА</div>
-  <div id="menuSub">Принеси вражеский флаг на свою базу быстрее бота. Если твой флаг украли — ты не можешь нести чужой, пока не вернёшь свой. В центре карты — турель: 3 попадания подряд захватывают её, и она станет стрелять по врагу сама. В коробках может быть мина, тройная ракета или смертельный щит.</div>
+  <div id="title">ТАНКОВЫЙ БОЙ</div>
+  <div id="menuSub">Бой на киллы — до 3 фрагов. После гибели ты не умираешь, а спавнишься в запертую клетку-камеру на своей базе, она откроется через 10 секунд. В центре карты — 5 разрушаемых блоков крестом: у каждого 3 хитпоинта. В угловых коробках может быть мина, тройная ракета или смертельный щит.</div>
   <button id="playBtn">В БОЙ</button>
   <a id="arcadeMenuBtn" class="ghost-btn" href="index.html">← МЕНЮ АРКАД</a>
-  <div id="menuHint">Танк сам крутится, пока не зажат Space · Space — едет вперёд и стреляет ракетой (пока патроны есть и флаг не при тебе) · S — сбросить флаг на месте · M — поставить мину</div>
+  <div id="menuHint">Танк сам крутится, пока не зажат Space · Space — едет вперёд и стреляет ракетой · M — поставить мину</div>
 </div>
 
 <div id="endScreen" class="hidden">
@@ -293,13 +273,14 @@ function loadImg(name) {
   return img;
 }
 
-const grassImg = loadImg('tileGrass1.png');
+const grassImgs = [loadImg('tileGrass1.png'), loadImg('tileGrass2.png')];
 const crateImg = loadImg('crateWood.png');
 const bushImg = loadImg('treeGreen_small.png');
 const tankBodyBlueImg = loadImg('tankBody_blue.png');
 const tankBarrelBlueImg = loadImg('tankBlue_barrel1.png');
 const tankBodyRedImg = loadImg('tankBody_red.png');
 const tankBarrelRedImg = loadImg('tankRed_barrel1.png');
+const explosionImgs = [1, 2, 3, 4, 5].map(i => loadImg(`explosion${i}.png`));
 
 // ============================================================================
 // --- Карта ---
@@ -309,7 +290,8 @@ const tankBarrelRedImg = loadImg('tankRed_barrel1.png');
 // турель с 3 стволами стоит по центру карты на среднем коридоре, 4 спавна
 // powerup-коробок стоят по углам прямоугольной зоны вокруг турели.
 const TILE = 48;
-const EMPTY = 0, CRATE = 1, ROCK = 2, BUSH = 3, GATE_L = 4, GATE_R = 5;
+const EMPTY = 0, CRATE = 1, ROCK = 2, BUSH = 3, GATE_L = 4, GATE_R = 5, WALL_BLOCK = 6;
+const CORRIDOR_HALF = 1; // половина ширины коридора/ворот в клетках (используется в buildMap и carveBase)
 // GATE_L/GATE_R — односторонняя стена в конце коридора у самой базы: снаряды
 // владельца базы (L=игрок слева, R=бот справа) проходят сквозь неё наружу,
 // снаряды противника гасятся о неё. Танки проходят сквозь клетку как обычно.
@@ -331,25 +313,38 @@ function cellAt(row, col) {
 }
 function isSolid(row, col) {
   const v = cellAt(row, col);
-  return v === CRATE || v === ROCK; // BUSH/GATE не блокируют движение
+  // CRATE (powerup-коробка) проходима — танк должен физически заехать на неё,
+  // чтобы подобрать; WALL_BLOCK (разрушаемая стена) и ROCK — твёрдые.
+  return v === WALL_BLOCK || v === ROCK;
 }
 
 let baseRadius = 0;
 let baseCenterL = { row: 0, col: 0 };
 let baseCenterR = { row: 0, col: 0 };
 let corridorRows = []; // [топ, центр, низ] — индексы строк трёх коридоров
-let turretCenter = { row: 0, col: 0 };
-let powerupSpawns = []; // [{row, col}] — 4 угла зоны вокруг турели
+let roomCenter = { row: 0, col: 0 }; // центр турельной комнаты (турели больше нет — тут крестовые блоки)
+let wallBlockSpawns = []; // [{row, col}] — 5 клеток крестом в центре центральной комнаты
+let powerupSpawns = []; // [{row, col}] — 4 угла зоны вокруг центра комнаты
+let respawnCellL = { row: 0, col: 0 }; // клетка-камера респауна игрока, на месте старого флага
+let respawnCellR = { row: 0, col: 0 }; // клетка-камера респауна бота
 
-/** Строит всю карту заново: базы, коридоры, ворота, турель, спавны. */
+/** Строит всю карту заново: базы, коридоры, ворота, центральную комнату с
+ *  крестом разрушаемых блоков, спавны powerup-коробок. */
 function buildMap() {
   rebuildGrid();
 
   const midRow = Math.floor(rows / 2);
+  // Клэмп на 1 гарантировал только "не за пределами сетки", но не оставлял
+  // места для полосы коридора шириной CORRIDOR_HALF по ОБЕ стороны от cr —
+  // если cr=1 и CORRIDOR_HALF=1, верхняя половина полосы (cr-1=0) попадала
+  // под "r<=0 → continue" и не прорисовывалась вовсе, оставляя коридор и
+  // расширенные ворота базы асимметрично уже с одной стороны (баг: игрок
+  // упирался в лишнюю стену сверху, хотя ширина коридора визуально совпадала
+  // с остальными). Клэмп теперь учитывает CORRIDOR_HALF как отступ от края.
   corridorRows = [
-    Math.max(1, Math.floor(rows * 0.22)),
+    Math.max(1 + CORRIDOR_HALF, Math.floor(rows * 0.22)),
     midRow,
-    Math.min(rows - 2, Math.floor(rows * 0.78)),
+    Math.min(rows - 2 - CORRIDOR_HALF, Math.floor(rows * 0.78)),
   ];
 
   // baseRadius раньше считался от min(rows, cols) без проверки, остаётся ли
@@ -395,7 +390,6 @@ function buildMap() {
   // carveBase) — заливка EMPTY поверх неё стирала пометку GATE_L/GATE_R
   // обратно в обычный EMPTY (баг: 0 ворот на карте, хотя сама дыра в стене
   // была). Поэтому явно НЕ трогаем клетки, которые уже GATE_L/GATE_R.
-  const CORRIDOR_HALF = 1;
   const ringOuterL = baseCenterL.col + baseRadius + 2; // на 1 клетку дальше внешнего края кольца
   const ringOuterR = baseCenterR.col - baseRadius - 2;
   for (const cr of corridorRows) {
@@ -413,7 +407,7 @@ function buildMap() {
   // коридоре. Единственные входы — слева и справа вдоль среднего коридора;
   // верхний/нижний коридоры проходят МИМО этой комнаты, не касаясь её (они
   // прочерчены на других corridorRows, достаточно далеко по вертикали).
-  turretCenter = { row: midRow, col: Math.floor(cols / 2) };
+  roomCenter = { row: midRow, col: Math.floor(cols / 2) };
   // На узких картах комната может доходить вплоть до колонки, где база
   // (тот же ряд, что и средний коридор) прорезала свою среднюю GATE-клетку —
   // тот же класс бага, что был с коридорами: заливка комнаты поверх уже
@@ -426,40 +420,83 @@ function buildMap() {
   // места, гарантируя зазор минимум в 2 клетки с каждой стороны.
   const availableHalfWidth = Math.floor((ringOuterR - ringOuterL) / 2) - 2;
   const roomHalf = Math.max(2, Math.min(Math.max(4, CORRIDOR_HALF + 3), availableHalfWidth));
-  for (let dr = -roomHalf; dr <= roomHalf; dr++) {
+  // Комната не должна дотягиваться по вертикали до верхнего/нижнего коридора —
+  // иначе её стена (ROCK) перезаписывает уже прочерченную полосу коридора в
+  // тех же колонках, разрывая проход насквозь (баг: верхний/нижний туннели
+  // упирались в стену комнаты вместо того, чтобы пройти мимо неё). На очень
+  // низких окнах зазора может не хватать даже на 2 клетки — раньше здесь стоял
+  // Math.max(2, ...), который на отрицательном зазоре молча форсировал
+  // roomHalfV=2 и всё равно наезжал на чужой коридор. Теперь зазор не может
+  // уйти ниже 1 (минимально узкая комната), но и не поднимается выше
+  // фактически доступного места — при нехватке места комната просто уже,
+  // а не наезжает на соседний коридор.
+  const topCorridorRow = corridorRows[0], bottomCorridorRow = corridorRows[2];
+  const gapToTop = Math.abs(roomCenter.row - topCorridorRow) - CORRIDOR_HALF - 2;
+  const gapToBottom = Math.abs(bottomCorridorRow - roomCenter.row) - CORRIDOR_HALF - 2;
+  const roomHalfV = Math.max(1, Math.min(roomHalf, gapToTop, gapToBottom));
+  const midCorridorGapCells = []; // клетки стыка среднего коридора со стеной комнаты
+  for (let dr = -roomHalfV; dr <= roomHalfV; dr++) {
     for (let dc = -roomHalf; dc <= roomHalf; dc++) {
-      const r = turretCenter.row + dr, c = turretCenter.col + dc;
+      const r = roomCenter.row + dr, c = roomCenter.col + dc;
       if (r <= 0 || c <= 0 || r >= rows - 1 || c >= cols - 1) continue;
       if (grid[r][c] === GATE_L || grid[r][c] === GATE_R) continue;
-      const onEdge = Math.abs(dr) === roomHalf || Math.abs(dc) === roomHalf;
+      const onEdge = Math.abs(dr) === roomHalfV || Math.abs(dc) === roomHalf;
       if (onEdge) {
-        // Стена комнаты — но не там, где через неё должен пройти средний коридор.
+        // Стена комнаты — но не там, где должен пройти средний коридор.
         const isMidCorridorGap = dr >= -CORRIDOR_HALF && dr <= CORRIDOR_HALF && (Math.abs(dc) === roomHalf);
-        grid[r][c] = isMidCorridorGap ? EMPTY : ROCK;
+        if (isMidCorridorGap) { grid[r][c] = EMPTY; midCorridorGapCells.push({ row: r, col: c }); }
+        else grid[r][c] = ROCK;
       } else {
         grid[r][c] = EMPTY; // внутри комнаты
       }
     }
   }
 
+  // Разрушаемые блоки — крестом (центр + 4 стороны, вплотную друг к другу) на
+  // месте бывшей турели, в центре турельной комнаты. Каждый блок держит 3
+  // попадания ракетой, прежде чем открыть клетку.
+  wallBlockSpawns = [
+    { row: roomCenter.row, col: roomCenter.col },
+    { row: roomCenter.row - 1, col: roomCenter.col },
+    { row: roomCenter.row + 1, col: roomCenter.col },
+    { row: roomCenter.row, col: roomCenter.col - 1 },
+    { row: roomCenter.row, col: roomCenter.col + 1 },
+  ].map(p => ({ row: clampRow(p.row), col: clampCol(p.col) }));
+
+  // Стык среднего коридора с комнатой — самое узкое место карты. На тесных
+  // окнах геометрия комнаты/коридора может не совпасть и проём не прорезаться
+  // (баг: игрок упирался в сплошную стену). Подстраховка: сама стеновая
+  // клетка на стыке коридора (сразу за прорезанным проёмом) — разрушаемый
+  // блок, а не камень, так путь наружу всегда пробиваем даже при сбое геометрии.
+  for (const cell of midCorridorGapCells) {
+    const outCol = cell.col > roomCenter.col ? cell.col + 1 : cell.col - 1;
+    if (outCol > 0 && outCol < cols - 1 && grid[cell.row][outCol] === ROCK) {
+      wallBlockSpawns.push({ row: cell.row, col: outCol });
+    }
+  }
+
   // Powerup-спавны — 4 угла ВНУТРИ турельной комнаты (не в коридорах — иначе
   // спавн мог провалиться в стену или другой, не связанный с комнатой путь).
   const zoneHalfW = Math.max(2, roomHalf - 2);
-  const zoneHalfH = Math.max(2, roomHalf - 2);
+  const zoneHalfH = Math.max(1, roomHalfV - 1);
   powerupSpawns = [
-    { row: turretCenter.row - zoneHalfH, col: turretCenter.col - zoneHalfW },
-    { row: turretCenter.row - zoneHalfH, col: turretCenter.col + zoneHalfW },
-    { row: turretCenter.row + zoneHalfH, col: turretCenter.col - zoneHalfW },
-    { row: turretCenter.row + zoneHalfH, col: turretCenter.col + zoneHalfW },
+    { row: roomCenter.row - zoneHalfH, col: roomCenter.col - zoneHalfW },
+    { row: roomCenter.row - zoneHalfH, col: roomCenter.col + zoneHalfW },
+    { row: roomCenter.row + zoneHalfH, col: roomCenter.col - zoneHalfW },
+    { row: roomCenter.row + zoneHalfH, col: roomCenter.col + zoneHalfW },
   ].map(p => ({ row: clampRow(p.row), col: clampCol(p.col) }));
 
   // Кусты — блокируют обзор, не движение: пара у каждой базы, немного в центре.
   scatterBushesAround(baseCenterL, 3);
   scatterBushesAround(baseCenterR, 3);
-  scatterBushesAround(turretCenter, 3);
+  scatterBushesAround(roomCenter, 3);
 
   clearAround(baseCenterL.row, baseCenterL.col, 1);
   clearAround(baseCenterR.row, baseCenterR.col, 1);
+
+  // Клетка-камера респауна — на месте старого флага, в центре каждой базы.
+  respawnCellL = { row: baseCenterL.row, col: baseCenterL.col };
+  respawnCellR = { row: baseCenterR.row, col: baseCenterR.col };
 }
 
 function clampRow(r) { return Math.max(1, Math.min(rows - 2, r)); }
@@ -482,19 +519,37 @@ function carveBase(center, side) {
       }
     }
   }
-  // Прорезаем 3 ворот: на каждой линии коридора идём от центра базы НАРУЖУ
-  // и расчищаем каждую клетку кольца-стены, пока не выйдем за него. Кольцо,
-  // будучи дискретизацией окружности, не имеет постоянную толщину в 1 клетку
-  // по всем направлениям (диагонали толще) — пробивать его "точкой на
-  // окружности" оставляло клетки стены недобитыми на части линий (баг: один
-  // выход упирался в стену). Идти и чистить, пока не выйдем наружу, всегда
-  // даёт честный сквозной проход независимо от локальной толщины.
+  // Прорезаем 3 выхода — по одному на каждую линию коридора (corridorRows).
+  // ВАЖНО: coridorRow может лежать ДАЛЕКО по вертикали от центра базы
+  // (дальше её кольца радиусом R+1) — верхний/нижний коридор в общем случае
+  // не проходят впритык к базе. Прежняя версия пробивала только ОДНУ
+  // горизонтальную линию grid[cr][col] от центра наружу: это работало, пока
+  // cr был близко к center.row (кольцо базы реально пересекало эту строку),
+  // но для дальнего coridorRow эта строка вообще не задевает круг базы —
+  // прорезалась пустая линия в никуда, а сама база оставалась отгорожена
+  // сплошной стеной (баг: выход к дальнему коридору был в принципе
+  // недостижим, а не просто узким). Теперь путь — Г-образный тоннель
+  // шириной CORRIDOR_HALF: сначала прорезаем полосу СТРОГО ПО ВЕРТИКАЛИ от
+  // края базы (на линии center.col) до cr, затем от этой точки — обычную
+  // горизонтальную полосу наружу, как раньше. Для cr рядом с центром
+  // (прежний случай) вертикальный участок вырождается в 0 клеток и всё
+  // работает как раньше.
   const gateVal = side === 'L' ? GATE_L : GATE_R;
   const dir = side === 'L' ? 1 : -1;
   for (const cr of corridorRows) {
+    const rowStep = cr >= center.row ? 1 : -1;
+    for (let dc = -CORRIDOR_HALF; dc <= CORRIDOR_HALF; dc++) {
+      const c = center.col + dc;
+      if (c <= 0 || c >= cols - 1) continue;
+      for (let r = center.row; r !== cr + rowStep; r += rowStep) {
+        if (r <= 0 || r >= rows - 1) break;
+        grid[r][c] = EMPTY;
+      }
+    }
+
     let col = center.col;
     let gateCol = null;
-    for (let step = 0; step <= R + 3; step++) {
+    for (let step = 0; step <= R + 3 + Math.abs(cr - center.row); step++) {
       col = center.col + dir * step;
       if (cr <= 0 || col <= 0 || cr >= rows - 1 || col >= cols - 1) break;
       if (grid[cr][col] === ROCK) {
@@ -505,6 +560,23 @@ function carveBase(center, side) {
       }
     }
     if (gateCol !== null && grid[cr][gateCol] === EMPTY) grid[cr][gateCol] = gateVal;
+
+    // Расширяем сам горизонтальный участок на CORRIDOR_HALF по вертикали —
+    // те же соображения, что и раньше: 1-клеточный проём слишком узкий,
+    // чтобы физически поймать угол без свободного руления.
+    if (gateCol !== null) {
+      for (let dr = -CORRIDOR_HALF; dr <= CORRIDOR_HALF; dr++) {
+        if (dr === 0) continue;
+        const r = cr + dr;
+        if (r <= 0 || r >= rows - 1) continue;
+        for (let step = 0; step <= R + 3 + Math.abs(cr - center.row); step++) {
+          const c = gateCol - dir * step;
+          if (c <= 0 || c >= cols - 1) break;
+          if (grid[r][c] === EMPTY) break;
+          grid[r][c] = EMPTY;
+        }
+      }
+    }
   }
 }
 
@@ -542,7 +614,8 @@ const TANK_SIZE = 25;
 const MAX_AMMO = 7;
 const AMMO_REGEN_TIME = 0.75;
 
-const RESPAWN_DELAY = 3; // секунд простоя на базе после гибели, прежде чем можно снова действовать
+const KILLS_TO_WIN = 3;
+const SPAWN_CELL_LOCK_TIME = 10; // секунд, клетка-камера держит танк взаперти после гибели
 
 function makeTank(isBot) {
   return {
@@ -556,11 +629,12 @@ function makeTank(isBot) {
     ammo: MAX_AMMO,
     ammoTimer: 0,
     alive: true,
-    respawnTimer: 0,        // > 0 = мёртв и ждёт возрождения на базе
-    carryingFlag: false,   // несёт ли ЧУЖОЙ флаг
-    powerup: null,          // 'mine' | 'triple' | 'shield' | null
+    inSpawnCell: false,     // true = заперт в клетке-камере респауна, ждёт открытия
+    spawnCellTimer: 0,      // секунд до открытия клетки
+    powerup: null,           // 'mine' | 'shield' | null
     powerupTime: 0,
-    mines: 0,               // запас мин, кладётся клавишей M
+    mines: 0,                // запас мин, кладётся клавишей M
+    kills: 0,
   };
 }
 const player = makeTank(false);
@@ -568,6 +642,9 @@ const bot = makeTank(true);
 
 function spawnPointFor(t) {
   return t.isBot ? baseCenterR : baseCenterL;
+}
+function respawnCellFor(t) {
+  return t.isBot ? respawnCellR : respawnCellL;
 }
 function resetTankToBase(t) {
   const p = spawnPointFor(t);
@@ -577,54 +654,11 @@ function resetTankToBase(t) {
   t.spinDir = 1;
   t.ammo = MAX_AMMO;
   t.ammoTimer = 0;
-  t.alive = true;
-  t.respawnTimer = 0;
-  t.carryingFlag = false;
+  t.inSpawnCell = false;
+  t.spawnCellTimer = 0;
   t.powerup = null;
   t.powerupTime = 0;
   t.mines = 0;
-}
-
-// ============================================================================
-// --- Флаги ---
-// ============================================================================
-// flag.state: 'base' (дома) | 'carried' (несёт carrier) | 'dropped' (лежит на x,y)
-function makeFlag(owner) {
-  return { owner, state: 'base', x: 0, y: 0, carrier: null };
-}
-const flagL = makeFlag('player'); // флаг игрока, живёт на baseCenterL
-const flagR = makeFlag('bot');    // флаг бота, живёт на baseCenterR
-
-function flagHomePos(flag) {
-  const c = flag.owner === 'player' ? baseCenterL : baseCenterR;
-  return { x: c.col * TILE + TILE / 2, y: c.row * TILE + TILE / 2 };
-}
-function resetFlag(flag) {
-  flag.state = 'base';
-  flag.carrier = null;
-  const home = flagHomePos(flag);
-  flag.x = home.x; flag.y = home.y;
-}
-
-// ============================================================================
-// --- Турель ---
-// ============================================================================
-const TURRET_HITS_TO_CAPTURE = 3;
-const TURRET_FIRE_INTERVAL = 0.5;
-const turret = {
-  angle: 0,
-  spinSpeed: 1.0,      // рад/сек, вращение стволов когда захвачена
-  owner: null,         // 'player' | 'bot' | null
-  hitsPlayer: 0,       // личный счёт попаданий каждого по турели, до 3
-  hitsBot: 0,
-  fireTimer: 0,
-  radius: 20,
-  x: 0, y: 0,
-};
-function turretCenterPx() { return { x: turret.x, y: turret.y }; }
-function syncTurretPos() {
-  turret.x = turretCenter.col * TILE + TILE / 2;
-  turret.y = turretCenter.row * TILE + TILE / 2;
 }
 
 // ============================================================================
@@ -634,15 +668,31 @@ const ROCKET_SPEED = 480;
 const ROCKET_RADIUS = 2.5;
 const ROCKET_LENGTH = 16;
 const ROCKET_WIDTH = 6;
-let rockets = []; // {x,y,angle,owner:'player'|'bot'|'turret'}
+let rockets = []; // {x,y,angle,owner:'player'|'bot'}
 let mines = [];   // {x,y,owner}
+
+const EXPLOSION_DURATION = 0.4; // секунд, проигрывает explosion1..5
+let explosions = []; // {x,y,timer}
 
 const POWERUP_DURATION = 7;
 const POWERUP_TYPES = ['mine', 'triple', 'shield'];
 
+const WALL_BLOCK_HP = 3; // попаданий ракетой, чтобы разрушить блок
+let wallBlockHP = new Map(); // "row,col" -> оставшиеся хиты блока
 let crateContents = new Map(); // "row,col" -> powerup type, assigned when the crate spawns
 
 function keyOf(row, col) { return row + ',' + col; }
+
+/** (Re)populate the 5 cross-shaped destructible wall blocks, each with WALL_BLOCK_HP hits. */
+function spawnWallBlocks() {
+  wallBlockHP.clear();
+  for (const spot of wallBlockSpawns) {
+    if (grid[spot.row][spot.col] === EMPTY || grid[spot.row][spot.col] === ROCK) {
+      grid[spot.row][spot.col] = WALL_BLOCK;
+      wallBlockHP.set(keyOf(spot.row, spot.col), WALL_BLOCK_HP);
+    }
+  }
+}
 
 /** (Re)populate the 4 corner crates, each carrying one of the 3 powerup kinds. */
 function spawnPowerupCrates() {
@@ -663,19 +713,28 @@ let gameState = 'menu'; // 'menu' | 'playing' | 'won' | 'lost'
 
 function fullReset() {
   buildMap();
-  syncTurretPos();
   resetTankToBase(player);
   resetTankToBase(bot);
-  resetFlag(flagL);
-  resetFlag(flagR);
+  player.kills = 0;
+  bot.kills = 0;
+  spawnWallBlocks();
   spawnPowerupCrates();
   rockets = [];
   mines = [];
-  turret.owner = null;
-  turret.hitsPlayer = 0;
-  turret.hitsBot = 0;
-  turret.angle = 0;
-  turret.fireTimer = 0;
+  explosions = [];
+  botState = 'hunt';
+  botStateTimer = 0;
+  botCoverTarget = null;
+  botStuckTimer = 0;
+  botStuckPos = { x: bot.x, y: bot.y };
+  botUnstuckAngle = null;
+  botUnstuckTimer = 0;
+  botMoveAngle = bot.angle;
+  botLastSeenPlayer = null;
+  botPrevPlayerPos = { x: player.x, y: player.y };
+  botPlayerVel = { x: 0, y: 0 };
+  botWasSeeingPlayer = false;
+  botReactionTimer = 0;
 }
 
 // ============================================================================
@@ -710,7 +769,7 @@ function hasLineOfSight(x1, y1, x2, y2) {
     const x = x1 + (x2 - x1) * t, y = y1 + (y2 - y1) * t;
     const row = Math.floor(y / TILE), col = Math.floor(x / TILE);
     const cell = cellAt(row, col);
-    if (cell === BUSH || cell === ROCK || cell === CRATE) return false;
+    if (cell === BUSH || cell === ROCK || cell === CRATE || cell === WALL_BLOCK) return false;
   }
   return true;
 }
@@ -731,15 +790,13 @@ window.addEventListener('keydown', e => {
     }
   }
   if (!wasDown && gameState === 'playing') {
-    if (e.code === 'KeyS') dropFlag(player);
     if (e.code === 'KeyM') tryPlaceMine(player);
   }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 function tryFire(t) {
-  if (!t.alive) return; // мёртв — ждёт respawn
-  if (t.carryingFlag) return; // с флагом стрелять нельзя
+  if (t.inSpawnCell) return; // заперт в клетке-камере — ждёт открытия
   if (t.ammo <= 0) return;
   t.ammo -= 1;
   t.ammoTimer = 0;
@@ -757,85 +814,452 @@ function fireRocket(t, angle) {
 }
 
 function tryPlaceMine(t) {
-  if (!t.alive) return;
+  if (t.inSpawnCell) return;
   if (t.mines <= 0) return;
   t.mines -= 1;
   mines.push({ x: t.x, y: t.y, owner: t.isBot ? 'bot' : 'player' });
 }
 
-/** Space+S — сбросить несомый вражеский флаг на месте (можно нести домой и
- *  охранять на своей базе вместо доставки в руках). */
-function dropFlag(t) {
-  if (!t.carryingFlag) return;
-  const flag = t.isBot ? flagL : flagR; // бот несёт флаг игрока, игрок — флаг бота
-  flag.state = 'dropped';
-  flag.x = t.x; flag.y = t.y;
-  flag.carrier = null;
-  t.carryingFlag = false;
+// ============================================================================
+// --- ИИ бота ---
+// ============================================================================
+// Состояния: 'evade' (уклоняется от летящей на него ракеты игрока — высший
+// приоритет), 'seekCover' (под обстрелом/только что уклонился — идёт к
+// ближайшему укрытию, блокирующему обзор от игрока), 'collectPowerup' (видит
+// свободную powerup-коробку и нет непосредственной угрозы), 'engage' (видит
+// игрока — стреляет, держит дистанцию вместо того чтобы переть в упор),
+// 'hunt' (не видит игрока — едет на последнюю известную/текущую позицию).
+// Прямолинейный, без A*: целится в цель напрямую, коллизии со стенами решает
+// столкновение-скольжение как у игрока — манёвры делаются выбором ЦЕЛИ
+// движения (угол доворота), а не боковым стрейфом, которого у танка нет.
+let botAiTimer = 0;
+let botWasSeeingPlayer = false; // видел ли игрока в ПРЕДЫДУЩЕМ кадре — для детекта "только что заметил"
+let botReactionTimer = 0;       // секунд реакции перед первым выстрелом по только что замеченной цели
+let botState = 'hunt';
+let botStateTimer = 0;
+let botCoverTarget = null;
+let botEvadeTarget = null;  // фиксируется один раз при входе в evade, не пересчитывается каждый кадр
+let botStuckTimer = 0;      // секунд подряд, что бот толкается вперёд почти без сдвига с места
+let botStuckPos = { x: 0, y: 0 };
+let botUnstuckAngle = null; // если не null — обходной курс, которого бот держится, пока не пройдёт преграду
+let botUnstuckTimer = 0;
+let botMoveAngle = 0;        // сглаженный курс движения — see driveTowards
+let botLastSeenPlayer = null; // {x,y} — последняя ЗАСЕЧЁННАЯ позиция игрока (не читерит через стены)
+let botPrevPlayerPos = { x: 0, y: 0 }; // для оценки скорости игрока (упреждение прицела)
+let botPlayerVel = { x: 0, y: 0 };
+
+const BOT_ENGAGE_MIN_DIST = TILE * 3.5; // держит эту дистанцию от игрока при стрельбе, не сближается вплотную
+const BOT_THREAT_LOOKAHEAD = 1.1; // секунд — на сколько вперёд экстраполируется траектория ракеты игрока
+const BOT_THREAT_RADIUS = TILE * 0.9; // насколько близко экстраполированная ракета должна пройти, чтобы считаться угрозой
+const BOT_STUCK_TRIGGER = 0.5; // секунд почти без движения при попытке ехать — считаем, что застрял
+const BOT_MOVE_ANGLE_SLEW = 3.5; // рад/сек — максимальная скорость смены ЖЕЛАЕМОГО курса при смене цели
+
+/** Находит letящую ракету игрока, которая в ближайшее время пройдёт близко к
+ *  боту — простая линейная экстраполяция позиции без учёта стен. */
+function findIncomingThreat() {
+  let best = null, bestDist = Infinity;
+  for (const r of rockets) {
+    if (r.owner !== 'player') continue;
+    for (let t = 0; t <= BOT_THREAT_LOOKAHEAD; t += 0.1) {
+      const fx = r.x + Math.cos(r.angle) * ROCKET_SPEED * t;
+      const fy = r.y + Math.sin(r.angle) * ROCKET_SPEED * t;
+      const d = Math.hypot(fx - bot.x, fy - bot.y);
+      if (d < BOT_THREAT_RADIUS && d < bestDist) { best = r; bestDist = d; }
+    }
+  }
+  return best;
 }
 
-// ============================================================================
-// --- Простой ИИ бота ---
-// ============================================================================
-// Состояния: 'defend' (патруль у своей базы/охрана флага), 'hunt' (идёт за
-// вражеским флагом), 'return' (несёт флаг игрока домой), 'recover' (свой флаг
-// украден и валяется — бежит поднять). Прямолинейный, без A*: целится в цель
-// напрямую, коллизии со стенами решает столкновение-скольжение как у игрока.
-let botAiTimer = 0;
-function updateBotAI(dt) {
-  botAiTimer -= dt;
-  let target = null;
-
-  if (bot.carryingFlag) {
-    // Несёт флаг игрока — домой, на свою базу.
-    target = { x: baseCenterR.col * TILE + TILE / 2, y: baseCenterR.row * TILE + TILE / 2 };
-  } else if (flagL.state === 'dropped') {
-    // Флаг игрока валяется на земле — забрать.
-    target = { x: flagL.x, y: flagL.y };
-  } else if (flagR.state === 'dropped' && flagR.carrier === null) {
-    // Собственный флаг бота уронен где-то — сначала вернуть его домой самому,
-    // так проще, чем ждать: бот идёт подобрать свой же флаг.
-    target = { x: flagR.x, y: flagR.y };
-  } else if (flagR.state === 'base' && flagL.state === 'base') {
-    // Обычная охота — идти к вражеской базе за флагом игрока.
-    target = { x: baseCenterL.col * TILE + TILE / 2, y: baseCenterL.row * TILE + TILE / 2 };
-  } else {
-    // Свой флаг у игрока (украден) — патрулируем у своей базы, ждём.
-    target = { x: baseCenterR.col * TILE + TILE / 2, y: baseCenterR.row * TILE + TILE / 2 };
+/** Ищет ближайшую клетку-укрытие (куст/камень/блок/коробка), которая
+ *  физически стоит между этой клеткой и игроком — то есть спрятавшись за
+ *  ней, бот выходит из линии видимости игрока. Сканирует кольцом вокруг
+ *  бота, чтобы не тянуть его через полкарты за одним укрытием. */
+function findCoverSpot() {
+  const botRow = Math.floor(bot.y / TILE), botCol = Math.floor(bot.x / TILE);
+  let best = null, bestDist = Infinity;
+  const RADIUS = 6;
+  for (let dr = -RADIUS; dr <= RADIUS; dr++) {
+    for (let dc = -RADIUS; dc <= RADIUS; dc++) {
+      const row = botRow + dr, col = botCol + dc;
+      if (row <= 0 || col <= 0 || row >= rows - 1 || col >= cols - 1) continue;
+      if (isSolid(row, col)) continue; // сама клетка должна быть проходима — бот стоит РЯДОМ с преградой, не в ней
+      // Ищем преграду по одну сторону от кандидата (между ним и игроком).
+      const cx = col * TILE + TILE / 2, cy = row * TILE + TILE / 2;
+      const toPlayerAngle = Math.atan2(player.y - cy, player.x - cx);
+      const blockRow = Math.floor((cy + Math.sin(toPlayerAngle) * TILE) / TILE);
+      const blockCol = Math.floor((cx + Math.cos(toPlayerAngle) * TILE) / TILE);
+      const blockCell = cellAt(blockRow, blockCol);
+      if (blockCell !== ROCK && blockCell !== WALL_BLOCK && blockCell !== CRATE && blockCell !== BUSH) continue;
+      if (hasLineOfSight(cx, cy, player.x, player.y)) continue; // укрытие реально перекрывает обзор
+      const d = Math.hypot(cx - bot.x, cy - bot.y);
+      if (d < bestDist) { bestDist = d; best = { x: cx, y: cy }; }
+    }
   }
+  return best;
+}
 
+/** Ближайшая незанятая powerup-коробка на карте (никто её уже не держит в
+ *  прицеле важнее — просто ближайшая по прямой). */
+function findNearestCrate() {
+  let best = null, bestDist = Infinity;
+  for (const spot of powerupSpawns) {
+    if (grid[spot.row][spot.col] !== CRATE) continue;
+    const cx = spot.col * TILE + TILE / 2, cy = spot.row * TILE + TILE / 2;
+    const d = Math.hypot(cx - bot.x, cy - bot.y);
+    if (d < bestDist) { bestDist = d; best = { x: cx, y: cy }; }
+  }
+  return best;
+}
+
+/** Клетка прямо по курсу бота, на расстоянии на пару клеток вперёд — то, во
+ *  что бот упирается, если едет своим текущим углом. */
+function cellAheadOf(t, dist) {
+  const row = Math.floor((t.y + Math.sin(t.angle) * dist) / TILE);
+  const col = Math.floor((t.x + Math.cos(t.angle) * dist) / TILE);
+  return { row, col, cell: cellAt(row, col) };
+}
+
+/** Пытается объехать преграду впереди: сканирует углы влево/вправо от
+ *  текущего курса и возвращает первый, на котором на несколько клеток
+ *  вперёд нет твёрдой преграды — простая локальная эвристика вместо
+ *  честного pathfinding, но достаточно, чтобы не тыкаться носом в стену. */
+function findUnstuckAngle(t) {
+  for (let step = 1; step <= 6; step++) {
+    for (const sign of [1, -1]) {
+      const a = t.angle + sign * step * (Math.PI / 8);
+      const ahead = cellAheadOf({ x: t.x, y: t.y, angle: a }, TILE * 2.5);
+      if (!isSolid(ahead.row, ahead.col)) return a;
+    }
+  }
+  return t.angle + Math.PI; // совсем зажат — разворот на месте
+}
+
+/** Ближайшая вражеская мина, что лежит близко к прямой линии между ботом и
+ *  его текущей целью движения — опасность наступить на неё по пути. */
+function findMineOnPath(target) {
+  const pathAngle = Math.atan2(target.y - bot.y, target.x - bot.x);
+  const pathDist = Math.hypot(target.x - bot.x, target.y - bot.y);
+  for (const m of mines) {
+    if (m.owner === 'bot') continue;
+    const toMineAngle = Math.atan2(m.y - bot.y, m.x - bot.x);
+    const toMineDist = Math.hypot(m.x - bot.x, m.y - bot.y);
+    if (toMineDist > pathDist + TILE) continue; // мина не ближе цели по этому направлению
+    let diff = toMineAngle - pathAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    // Перпендикулярное отклонение мины от линии курса — если мина почти на
+    // пути (в пределах чуть больше ширины танка), считаем её угрозой.
+    const perpDist = Math.abs(Math.sin(diff)) * toMineDist;
+    if (perpDist < TILE * 0.6 && toMineDist < TILE * 4 && hasLineOfSight(bot.x, bot.y, m.x, m.y)) return m;
+  }
+  return null;
+}
+
+/** Точка упреждения: где окажется игрок к моменту, когда ракета, выпущенная
+ *  СЕЙЧАС из (fromX,fromY), долетит до него — классическая задача перехвата,
+ *  решённая приближённо в 2 шага (сперва считаем время по текущей дистанции,
+ *  потом уточняем по экстраполированной точке). Игрок сам не стреляет
+ *  предугадывая, но живой противник целится туда, где цель БУДЕТ, а не где
+ *  она СЕЙЧАС — без этого стрельба бота выглядит наивной по прямой линии. */
+function leadTarget(fromX, fromY, targetX, targetY, vx, vy) {
+  const dist0 = Math.hypot(targetX - fromX, targetY - fromY);
+  const t0 = dist0 / ROCKET_SPEED;
+  const px = targetX + vx * t0, py = targetY + vy * t0;
+  const dist1 = Math.hypot(px - fromX, py - fromY);
+  const t1 = dist1 / ROCKET_SPEED;
+  return { x: targetX + vx * t1, y: targetY + vy * t1 };
+}
+
+/** Плавно сдвигает angle к target на величину, ограниченную maxDelta —
+ *  общий помощник для доворота ствола/курса без мгновенных скачков. */
+function turnToward(angle, target, maxDelta) {
+  let diff = target - angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  if (Math.abs(diff) < maxDelta) return target;
+  return angle + Math.sign(diff) * maxDelta;
+}
+
+function driveTowards(target, dt) {
   const dx = target.x - bot.x, dy = target.y - bot.y;
-  const desiredAngle = Math.atan2(dy, dx);
-  let diff = desiredAngle - bot.angle;
+  const rawDesiredAngle = Math.atan2(dy, dx);
+
+  // botMoveAngle — сглаженное "куда мы вообще-то держим курс", отдельно от
+  // мгновенного bot.angle. Цель (target) может дёргаться между пересчётами
+  // состояния — если гнать angle прямо на неё каждый кадр, поворот срывался
+  // в новую сторону рывком в момент смены цели. Сглаживаем сам желаемый
+  // курс с ограниченной скоростью, а bot.angle затем плавно тянется за ним —
+  // двойное сглаживание убирает ощущение дёрганья при смене состояния/цели.
+  botMoveAngle = turnToward(botMoveAngle, rawDesiredAngle, BOT_MOVE_ANGLE_SLEW * dt);
+
+  let diff = botMoveAngle - bot.angle;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
 
-  // Крутится к цели, но с тем же ограничением скорости поворота, что игрок.
   const turnAmount = bot.rotSpeed * dt;
-  if (Math.abs(diff) < turnAmount) {
-    bot.angle = desiredAngle;
-  } else {
-    bot.angle += Math.sign(diff) * turnAmount;
+  if (Math.abs(diff) < turnAmount) bot.angle = botMoveAngle;
+  else bot.angle += Math.sign(diff) * turnAmount;
+
+  // Debounce на решение "ехать/стоять" — без него thrusting мог переключаться
+  // туда-обратно каждый кадр на границе порога (0.5 рад), что выглядело как
+  // резкий старт-стоп. Отдельные, разнесённые пороги на включение/выключение.
+  const aimedWellEnough = Math.abs(diff) < (bot.thrusting ? 0.7 : 0.4);
+  bot.thrusting = aimedWellEnough;
+}
+
+function updateBotAI(dt) {
+  botAiTimer -= dt;
+  botStateTimer -= dt;
+
+  // Оценка скорости игрока по кадровой дельте позиции — сглаженная (EMA),
+  // чтобы дрожание одного кадра не портило упреждение прицела.
+  if (dt > 0) {
+    const vx = (player.x - botPrevPlayerPos.x) / dt, vy = (player.y - botPrevPlayerPos.y) / dt;
+    botPlayerVel.x = botPlayerVel.x * 0.8 + vx * 0.2;
+    botPlayerVel.y = botPlayerVel.y * 0.8 + vy * 0.2;
+  }
+  botPrevPlayerPos = { x: player.x, y: player.y };
+
+  // Игрок заперт в клетке-камере респауна (после гибели, до открытия через
+  // 10с) — не может ни стрелять, ни двигаться, ни представлять угрозу.
+  // Живой игрок в этот момент не будет пугаться теней и жаться к укрытиям —
+  // воспользуется затишьем, чтобы собрать коробки/расчистить блоки, готовясь
+  // к моменту, когда respawn откроется.
+  if (player.inSpawnCell) {
+    const nearCrate = findNearestCrate();
+    let target;
+    if (nearCrate) target = nearCrate;
+    else {
+      const ahead = cellAheadOf(bot, TILE * 0.9);
+      if (ahead.cell === WALL_BLOCK) {
+        bot.thrusting = false;
+        const blockAngle = Math.atan2(ahead.row * TILE + TILE / 2 - bot.y, ahead.col * TILE + TILE / 2 - bot.x);
+        bot.angle = turnToward(bot.angle, blockAngle, bot.rotSpeed * dt);
+        botMoveAngle = bot.angle;
+        if (botAiTimer <= 0 && Math.abs(blockAngle - bot.angle) < 0.2) { tryFire(bot); botAiTimer = 0.5; }
+        return;
+      }
+      target = { x: (roomCenter.col) * TILE + TILE / 2, y: (roomCenter.row) * TILE + TILE / 2 };
+    }
+    driveTowards(target, dt);
+    return;
   }
 
-  // Едет вперёд, если более-менее смотрит на цель; иначе тормозит и довершает поворот.
-  const thrusting = Math.abs(diff) < 0.5;
-  bot.thrusting = thrusting;
+  const distToPlayer = Math.hypot(player.x - bot.x, player.y - bot.y);
+  const sees = hasLineOfSight(bot.x, bot.y, player.x, player.y);
+  if (sees) botLastSeenPlayer = { x: player.x, y: player.y };
+  const threat = findIncomingThreat();
 
-  // Стреляет по игроку, если видит его и достаточно смотрит в его сторону.
-  if (botAiTimer <= 0 && !bot.carryingFlag && hasLineOfSight(bot.x, bot.y, player.x, player.y)) {
-    const toPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
-    let aimDiff = toPlayer - bot.angle;
-    while (aimDiff > Math.PI) aimDiff -= Math.PI * 2;
-    while (aimDiff < -Math.PI) aimDiff += Math.PI * 2;
-    if (Math.abs(aimDiff) < 0.3) {
-      tryFire(bot);
-      botAiTimer = 0.6 + Math.random() * 0.4;
+  // Задержка реакции: только что заметил игрока (не видел его прошлый
+  // кадр) — берёт короткую паузу перед первым выстрелом, как человек,
+  // которому нужно время среагировать, а не мгновенно идеально стреляет в
+  // ту же миллисекунду, как цель попала в обзор.
+  if (sees && !botWasSeeingPlayer) botReactionTimer = 0.15 + Math.random() * 0.2;
+  else if (sees) botReactionTimer = Math.max(0, botReactionTimer - dt);
+  botWasSeeingPlayer = sees;
+
+  // Мина игрока прямо под ногами/впритык — статичное стояние в engage не
+  // спасает от неё (updateMines взрывает по радиусу, не по курсу движения).
+  // Экстренный уход, как от летящей ракеты — живой игрок тоже отпрыгнет,
+  // заметив мину под собой, а не продолжит спокойно целиться.
+  let nearbyMine = null;
+  for (const m of mines) {
+    if (m.owner === 'bot') continue;
+    if (Math.hypot(m.x - bot.x, m.y - bot.y) < TILE * 1.3) { nearbyMine = m; break; }
+  }
+
+  // Уклонение — высший приоритет, перебивает любое другое состояние сразу.
+  // Направление уклонения фиксируется ОДИН РАЗ при входе в состояние, а не
+  // пересчитывается каждый кадр — иначе пока летит одна ракета (несколько
+  // кадров подряд), цель уклонения дёргалась в новую случайную сторону
+  // каждый кадр, и бот дрожал на месте вместо связного манёвра.
+  if ((threat || nearbyMine) && botState !== 'evade') {
+    botState = 'evade';
+    botStateTimer = 0.5;
+    botCoverTarget = null;
+    if (nearbyMine) {
+      const away = Math.atan2(bot.y - nearbyMine.y, bot.x - nearbyMine.x);
+      botEvadeTarget = { x: bot.x + Math.cos(away) * TILE * 3, y: bot.y + Math.sin(away) * TILE * 3 };
+    } else {
+      const perp = threat.angle + Math.PI / 2;
+      const sign = Math.random() < 0.5 ? 1 : -1;
+      botEvadeTarget = { x: bot.x + Math.cos(perp) * sign * TILE * 3, y: bot.y + Math.sin(perp) * sign * TILE * 3 };
+    }
+  } else if (botState === 'evade' && botStateTimer <= 0) {
+    botState = sees ? 'seekCover' : 'hunt';
+    botStateTimer = 0.6;
+  }
+
+  // Периодически (не каждый кадр) пересматриваем состояние вне уклонения —
+  // интервал заметно длиннее, чем раньше, чтобы состояние не переключалось
+  // туда-обратно на границе условий (это и читалось как "дёрганье").
+  if (botState !== 'evade' && botStateTimer <= 0) {
+    botStateTimer = 1.2 + Math.random() * 0.6;
+    const nearCrate = findNearestCrate();
+    // Не бросает бой ради коробки, если уже несёт мощный powerup (щит/тройная
+    // ракета) или игрок совсем рядом и виден — тогда цена побежать за
+    // добычей (подставить спину) выше выгоды. Живой игрок тоже так не делает.
+    const alreadyEquipped = bot.powerup === 'shield' || bot.powerup === 'triple';
+    const inCloseFight = sees && distToPlayer < TILE * 3;
+    if (sees && distToPlayer < TILE * 5) {
+      botState = 'engage';
+    } else if (nearCrate && !alreadyEquipped && !inCloseFight && Math.hypot(nearCrate.x - bot.x, nearCrate.y - bot.y) < TILE * 8) {
+      botState = 'collectPowerup';
+    } else if (sees) {
+      botState = 'engage';
+    } else {
+      botState = 'hunt';
     }
   }
 
-  // Изредка ставит мину, если есть и враг не слишком близко (не подрывается сам).
-  if (bot.mines > 0 && Math.random() < dt * 0.15 && Math.hypot(player.x - bot.x, player.y - bot.y) > TILE * 3) {
+  let target;
+  if (botState === 'evade') {
+    target = botEvadeTarget || { x: player.x, y: player.y };
+  } else if (botState === 'seekCover') {
+    if (!botCoverTarget || Math.hypot(botCoverTarget.x - bot.x, botCoverTarget.y - bot.y) < TILE * 0.6) {
+      botCoverTarget = findCoverSpot();
+    }
+    target = botCoverTarget || { x: player.x, y: player.y };
+    if (!botCoverTarget) botState = 'engage'; // укрытия рядом нет — просто вступает в бой
+  } else if (botState === 'collectPowerup') {
+    const c = findNearestCrate();
+    target = c || { x: player.x, y: player.y };
+    if (!c) botState = 'hunt';
+  } else if (botState === 'engage') {
+    // Держит дистанцию: слишком близко — пятится (едет от игрока), слишком
+    // далеко — сближается; в комфортной зоне — стоит и целится, не подставляя
+    // борт под ответный огонь на сближении. Широкий зазор между порогами
+    // сближения (0.6x) и отступления (1.6x) с большим запасом вокруг
+    // "комфортной" зоны — иначе на границе дистанция едва колеблется туда-
+    // обратно из-за движения игрока, и бот дёргался между пятится/стоит/едет.
+    //
+    // Дистанция адаптируется под счёт: отставая по киллам — рискует и
+    // сближается сильнее (нужно отыгрываться), ведя в счёте — играет
+    // осторожнее и держится дальше. Живой игрок тоже меняет манеру игры под
+    // давлением счёта, а не держит одну и ту же дистанцию весь матч.
+    const scoreDiff = bot.kills - player.kills; // >0 бот ведёт, <0 отстаёт
+    const engageDist = BOT_ENGAGE_MIN_DIST * (scoreDiff > 0 ? 1.25 : scoreDiff < 0 ? 0.75 : 1);
+    if (bot.ammo === 0 && bot.powerup !== 'shield') {
+      // Безоружен — держится подальше, ждёт перезарядки вместо того чтобы
+      // маячить под огнём без возможности ответить. Живой игрок не полезет
+      // в упор с пустым магазином.
+      target = { x: bot.x - (player.x - bot.x), y: bot.y - (player.y - bot.y) };
+    } else if (bot.powerup === 'shield') {
+      // Со щитом касание игрока убивает его мгновенно — агрессивно сближается
+      // для тарана вместо обычного держания дистанции, пока щит активен.
+      target = { x: player.x, y: player.y };
+    } else if (distToPlayer < engageDist * 0.6) {
+      target = { x: bot.x - (player.x - bot.x), y: bot.y - (player.y - bot.y) };
+    } else if (distToPlayer > engageDist * 1.6) {
+      target = { x: player.x, y: player.y };
+    } else {
+      target = null; // в самый раз — не двигаемся, просто целимся и стреляем
+    }
+  } else {
+    // hunt: не видит игрока прямо сейчас — едет к последней ЗАСЕЧЁННОЙ
+    // позиции, а не к текущей реальной (иначе бот "читерски" знал бы, где
+    // игрок, даже спрятавшись за стеной — не по-человечески). Если игрока
+    // не видели ни разу, идёт к его стартовой стороне карты как разведка.
+    target = botLastSeenPlayer || { x: player.x, y: player.y };
+  }
+
+  // Объезд видимых вражеских мин: если цель лежит за миной почти по прямой
+  // линии, отклоняем курс в сторону вместо того чтобы переть прямо на неё —
+  // живой игрок замечает мину и обходит, а не наступает не глядя.
+  if (target && botState !== 'evade') {
+    const mineAhead = findMineOnPath(target);
+    if (mineAhead) {
+      const toMineAngle = Math.atan2(mineAhead.y - bot.y, mineAhead.x - bot.x);
+      const avoidAngle = toMineAngle + Math.PI / 2;
+      target = { x: bot.x + Math.cos(avoidAngle) * TILE * 2, y: bot.y + Math.sin(avoidAngle) * TILE * 2 };
+    }
+  }
+
+  // Детект застревания: толкаемся вперёд (thrusting=true), но почти не
+  // сдвигаемся с места за BOT_STUCK_TRIGGER секунд — уткнулись в преграду,
+  // которую driveTowards сам не объедет (он целится по прямой линии, без
+  // pathfinding). Раньше это выглядело так, будто бот просто останавливался
+  // у стены/блока и ничего не делал.
+  const willThrust = !!target;
+  if (willThrust) {
+    const moved = Math.hypot(bot.x - botStuckPos.x, bot.y - botStuckPos.y);
+    if (moved > TILE * 0.15) { botStuckTimer = 0; botStuckPos = { x: bot.x, y: bot.y }; }
+    else botStuckTimer += dt;
+  } else {
+    botStuckTimer = 0; botStuckPos = { x: bot.x, y: bot.y };
+  }
+
+  if (botUnstuckTimer > 0) botUnstuckTimer -= dt;
+  else botUnstuckAngle = null;
+
+  let forcedFireAtBlock = false;
+  if (botStuckTimer > BOT_STUCK_TRIGGER) {
+    const ahead = cellAheadOf(bot, TILE * 0.9);
+    if (ahead.cell === WALL_BLOCK) {
+      forcedFireAtBlock = true; // блок разрушаем — стреляем в него, не объезжаем
+    } else if (!botUnstuckAngle) {
+      botUnstuckAngle = findUnstuckAngle(bot);
+      botUnstuckTimer = 1.2;
+    }
+    botStuckTimer = 0;
+  }
+
+  if (forcedFireAtBlock) {
+    bot.thrusting = false; // стоим и целимся точно в блок, не толкаемся в него дальше
+    botMoveAngle = bot.angle; // не копит рассинхрон с курсом, пока стоим
+  } else if (botUnstuckAngle !== null) {
+    botMoveAngle = turnToward(botMoveAngle, botUnstuckAngle, BOT_MOVE_ANGLE_SLEW * dt);
+    bot.angle = turnToward(bot.angle, botMoveAngle, bot.rotSpeed * dt);
+    bot.thrusting = Math.abs(botUnstuckAngle - bot.angle) < 0.6;
+  } else if (target) {
+    driveTowards(target, dt);
+  } else {
+    // Стоим на месте, но продолжаем доворачивать ствол на УПРЕЖДЁННУЮ точку
+    // для точного огня — целиться в текущую позицию, стоя на месте и ожидая
+    // следующего выстрела, было бы систематически "за спиной" движущегося игрока.
+    const lead = leadTarget(bot.x, bot.y, player.x, player.y, botPlayerVel.x, botPlayerVel.y);
+    const desiredAngle = Math.atan2(lead.y - bot.y, lead.x - bot.x);
+    bot.angle = turnToward(bot.angle, desiredAngle, bot.rotSpeed * dt);
+    botMoveAngle = bot.angle;
+    bot.thrusting = false;
+  }
+
+  // Стреляет по игроку ИЛИ по преграде, застопорившей путь — независимо от
+  // состояния (даже уклоняясь, огрызается, если прицел готов).
+  if (botAiTimer <= 0) {
+    if (forcedFireAtBlock) {
+      const ahead = cellAheadOf(bot, TILE * 0.9);
+      const blockAngle = Math.atan2(ahead.row * TILE + TILE / 2 - bot.y, ahead.col * TILE + TILE / 2 - bot.x);
+      let aimDiff = blockAngle - bot.angle;
+      while (aimDiff > Math.PI) aimDiff -= Math.PI * 2;
+      while (aimDiff < -Math.PI) aimDiff += Math.PI * 2;
+      if (Math.abs(aimDiff) < 0.4) {
+        tryFire(bot);
+        botAiTimer = 0.5;
+      } else {
+        bot.angle += Math.sign(aimDiff) * Math.min(Math.abs(aimDiff), bot.rotSpeed * dt);
+      }
+    } else if (sees && botReactionTimer <= 0) {
+      const lead = leadTarget(bot.x, bot.y, player.x, player.y, botPlayerVel.x, botPlayerVel.y);
+      // Небольшая погрешность прицела, растущая с дистанцией — на близкой
+      // дистанции бьёт почти без промаха, на дальней иногда мажет, как живой
+      // игрок, которому труднее удержать точный прицел на движущейся цели
+      // издалека, а не всегда идеально попадает независимо от расстояния.
+      const aimError = Math.min(0.12, distToPlayer / (TILE * 40));
+      const toPlayer = Math.atan2(lead.y - bot.y, lead.x - bot.x) + (Math.random() * 2 - 1) * aimError;
+      let aimDiff = toPlayer - bot.angle;
+      while (aimDiff > Math.PI) aimDiff -= Math.PI * 2;
+      while (aimDiff < -Math.PI) aimDiff += Math.PI * 2;
+      if (Math.abs(aimDiff) < 0.3 && hasLineOfSight(bot.x, bot.y, lead.x, lead.y)) {
+        tryFire(bot);
+        botAiTimer = 0.6 + Math.random() * 0.4;
+      }
+    }
+  }
+
+  // Ставит мину при отступлении/уклонении — оставляет её противнику на пути,
+  // а не наугад посреди боя. Не подрывается сам (враг не слишком близко).
+  if (bot.mines > 0 && (botState === 'evade' || botState === 'seekCover') && Math.random() < dt * 0.4 && distToPlayer > TILE * 2.5) {
     tryPlaceMine(bot);
   }
 }
@@ -882,46 +1306,6 @@ function collectCrateIfOnOne(t) {
   }
 }
 
-/** true, если центр танка сейчас в ТОЙ ЖЕ клетке сетки, что и точка (px,py) —
- *  строгая одноклеточная зона захвата вместо широкого радиуса. */
-function sameTile(tx, ty, px, py) {
-  return Math.floor(tx / TILE) === Math.floor(px / TILE) && Math.floor(ty / TILE) === Math.floor(py / TILE);
-}
-
-function tryPickupFlags(t) {
-  const side = t.isBot ? 'bot' : 'player';
-  const enemyFlag = t.isBot ? flagL : flagR;
-  const ownFlag = t.isBot ? flagR : flagL;
-
-  // Подобрать вражеский флаг — только если он свободен (на базе врага или
-  // валяется на земле), и только если СВОЙ флаг не украден прямо сейчас.
-  // Одноклеточная зона: нужно физически стоять на клетке флага, не рядом.
-  if (!t.carryingFlag && enemyFlag.state !== 'carried') {
-    const myFlagStolen = ownFlag.state === 'carried';
-    // Флаг "на базе" физически сидит в центре круга — проверяем по факту.
-    const flagPos = enemyFlag.state === 'base' ? flagHomePos(enemyFlag) : enemyFlag;
-    if (sameTile(t.x, t.y, flagPos.x, flagPos.y) && !myFlagStolen) {
-      enemyFlag.state = 'carried';
-      enemyFlag.carrier = side;
-      t.carryingFlag = true;
-    }
-  }
-
-  // Подобрать СВОЙ флаг, если он валяется на земле (возвращает его на базу мгновенно).
-  if (ownFlag.state === 'dropped' && sameTile(t.x, t.y, ownFlag.x, ownFlag.y)) {
-    resetFlag(ownFlag);
-  }
-}
-
-function checkWinByDelivery(t) {
-  if (!t.carryingFlag) return;
-  const base = t.isBot ? baseCenterR : baseCenterL;
-  const d = Math.hypot(t.x - base.col * TILE - TILE / 2, t.y - base.row * TILE - TILE / 2);
-  if (d < baseRadius * TILE * 0.6) {
-    if (t.isBot) loseGame(); else winGame();
-  }
-}
-
 function updateRockets(dt) {
   for (const r of rockets) {
     r.x += Math.cos(r.angle) * ROCKET_SPEED * dt;
@@ -930,32 +1314,32 @@ function updateRockets(dt) {
     const row = Math.floor(r.y / TILE), col = Math.floor(r.x / TILE);
     const cell = cellAt(row, col);
     if (cell === ROCK) { r.dead = true; }
-    else if (cell === CRATE) { grid[row][col] = EMPTY; crateContents.delete(keyOf(row, col)); r.dead = true; }
+    else if (cell === CRATE) { r.dead = true; } // powerup-коробка гасит ракету, но не разрушается
+    else if (cell === WALL_BLOCK) {
+      r.dead = true;
+      const key = keyOf(row, col);
+      const hpLeft = (wallBlockHP.get(key) || WALL_BLOCK_HP) - 1;
+      if (hpLeft <= 0) {
+        grid[row][col] = EMPTY;
+        wallBlockHP.delete(key);
+        explosions.push({ x: col * TILE + TILE / 2, y: row * TILE + TILE / 2, timer: EXPLOSION_DURATION });
+      } else { wallBlockHP.set(key, hpLeft); }
+    }
     else if (cell === GATE_L && r.owner !== 'player') { r.dead = true; } // враг игрока гасится о его ворота
     else if (cell === GATE_R && r.owner !== 'bot') { r.dead = true; }
 
     if (r.dead) continue;
 
-    // Попадание по турели.
-    if (turret.owner === null || turret.owner !== r.owner) {
-      const dt2 = Math.hypot(r.x - turret.x, r.y - turret.y);
-      if (dt2 < turret.radius) {
-        r.dead = true;
-        registerTurretHit(r.owner);
-        continue;
-      }
-    }
-
     // Попадание по танку (не по себе/своему владельцу).
     for (const t of [player, bot]) {
       const side = t.isBot ? 'bot' : 'player';
       if (side === r.owner) continue;
-      if (!t.alive) continue;
+      if (t.inSpawnCell) continue;
       if (t.powerup === 'shield') continue; // щит — неуязвимость к урону, отдельно убивает касанием
       const d = Math.hypot(r.x - t.x, r.y - t.y);
       if (d < t.radius + ROCKET_RADIUS) {
         r.dead = true;
-        fragTank(t);
+        fragTank(t, r.owner === 'player' ? player : r.owner === 'bot' ? bot : null);
         break;
       }
     }
@@ -963,39 +1347,16 @@ function updateRockets(dt) {
   rockets = rockets.filter(r => !r.dead);
 }
 
-function registerTurretHit(byWho) {
-  if (byWho === 'player') turret.hitsPlayer += 1; else turret.hitsBot += 1;
-  const hits = byWho === 'player' ? turret.hitsPlayer : turret.hitsBot;
-  if (hits >= TURRET_HITS_TO_CAPTURE) {
-    turret.owner = byWho;
-    turret.hitsPlayer = 0;
-    turret.hitsBot = 0;
-  }
-}
-
-function updateTurret(dt) {
-  if (turret.owner === null) return;
-  turret.angle += turret.spinSpeed * dt;
-  turret.fireTimer -= dt;
-  if (turret.fireTimer <= 0) {
-    turret.fireTimer = TURRET_FIRE_INTERVAL;
-    for (let i = 0; i < 3; i++) {
-      const a = turret.angle + (i * Math.PI * 2) / 3;
-      rockets.push({ x: turret.x + Math.cos(a) * (turret.radius + 4), y: turret.y + Math.sin(a) * (turret.radius + 4), angle: a, owner: turret.owner });
-    }
-  }
-}
-
 function updateMines(dt) {
   for (const m of mines) {
     for (const t of [player, bot]) {
       const side = t.isBot ? 'bot' : 'player';
       if (side === m.owner) continue; // своя мина не взрывает хозяина
-      if (!t.alive) continue;
+      if (t.inSpawnCell) continue;
       const d = Math.hypot(t.x - m.x, t.y - m.y);
       if (d < t.radius + 10) {
         m.dead = true;
-        fragTank(t);
+        fragTank(t, m.owner === 'player' ? player : bot);
       }
     }
   }
@@ -1004,33 +1365,54 @@ function updateMines(dt) {
 
 function updateShieldTouch() {
   for (const [a, b] of [[player, bot]]) {
-    if (!a.alive || !b.alive) continue;
+    if (a.inSpawnCell || b.inSpawnCell) continue;
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     if (d < a.radius + b.radius) {
-      if (a.powerup === 'shield') fragTank(b);
-      if (b.powerup === 'shield') fragTank(a);
+      if (a.powerup === 'shield') fragTank(b, a);
+      if (b.powerup === 'shield') fragTank(a, b);
     }
   }
 }
 
-/** "Смерть" танка — роняет несомый флаг (если есть) и телепортирует домой
- *  с полным сбросом боеприпасов/powerup'ов, как respawn. */
-function fragTank(t) {
-  if (!t.alive) return; // уже мёртв — не даём повторно словить урон во время respawn-паузы
-  if (t.carryingFlag) dropFlag(t);
-  const p = spawnPointFor(t);
-  t.x = p.col * TILE + TILE / 2;
-  t.y = p.row * TILE + TILE / 2;
-  t.alive = false;
-  t.respawnTimer = RESPAWN_DELAY;
+/** "Смерть" танка — не убивает по-настоящему, а телепортирует в клетку-камеру
+ *  респауна на своей базе, где танк заперт SPAWN_CELL_LOCK_TIME секунд, прежде
+ *  чем клетка откроется и можно будет снова действовать. Начисляет килл убийце
+ *  и проверяет условие победы. */
+function fragTank(t, killer) {
+  if (t.inSpawnCell) return; // уже заперт — не даём повторно словить урон
+  explosions.push({ x: t.x, y: t.y, timer: EXPLOSION_DURATION });
+  const cell = respawnCellFor(t);
+  t.x = cell.col * TILE + TILE / 2;
+  t.y = cell.row * TILE + TILE / 2;
+  t.inSpawnCell = true;
+  t.spawnCellTimer = SPAWN_CELL_LOCK_TIME;
   t.powerup = null;
   t.powerupTime = 0;
+
+  if (killer) {
+    killer.kills += 1;
+    if (killer.kills >= KILLS_TO_WIN) {
+      if (killer.isBot) loseGame(); else winGame();
+    }
+  }
 }
 
 function updateRespawn(t, dt) {
-  if (t.alive) return;
-  t.respawnTimer -= dt;
-  if (t.respawnTimer <= 0) resetTankToBase(t);
+  if (!t.inSpawnCell) return;
+  t.spawnCellTimer -= dt;
+  if (t.spawnCellTimer <= 0) {
+    t.inSpawnCell = false;
+    t.ammo = MAX_AMMO;
+    t.ammoTimer = 0;
+    if (t.isBot) {
+      // Пока бот был заперт, updateBotAI не вызывался — botStuckPos остался
+      // на позиции ДО телепорта в клетку, что ложно сработало бы детектом
+      // застревания в первом же кадре после открытия. Синхронизируем на
+      // текущую позицию, чтобы бот стартовал начисто.
+      botStuckTimer = 0;
+      botStuckPos = { x: t.x, y: t.y };
+    }
+  }
 }
 
 function update(dt) {
@@ -1039,39 +1421,42 @@ function update(dt) {
   updateRespawn(player, dt);
   updateRespawn(bot, dt);
 
-  if (player.alive) updateTankPhysics(player, dt, !!keys['Space']);
-  if (bot.alive) { updateBotAI(dt); updateTankPhysics(bot, dt, !!bot.thrusting); }
+  if (!player.inSpawnCell) updateTankPhysics(player, dt, !!keys['Space']);
+  if (!bot.inSpawnCell) { updateBotAI(dt); updateTankPhysics(bot, dt, !!bot.thrusting); }
 
   updateAmmoAndPowerup(player, dt);
   updateAmmoAndPowerup(bot, dt);
 
-  if (player.alive) collectCrateIfOnOne(player);
-  if (bot.alive) collectCrateIfOnOne(bot);
-
-  if (player.alive) tryPickupFlags(player);
-  if (bot.alive) tryPickupFlags(bot);
-  if (player.alive) checkWinByDelivery(player);
-  if (bot.alive) checkWinByDelivery(bot);
-
-  // Несомый флаг следует за носителем.
-  if (flagL.state === 'carried') { flagL.x = flagL.carrier === 'bot' ? bot.x : player.x; flagL.y = flagL.carrier === 'bot' ? bot.y : player.y; }
-  if (flagR.state === 'carried') { flagR.x = flagR.carrier === 'bot' ? bot.x : player.x; flagR.y = flagR.carrier === 'bot' ? bot.y : player.y; }
+  if (!player.inSpawnCell) collectCrateIfOnOne(player);
+  if (!bot.inSpawnCell) collectCrateIfOnOne(bot);
 
   updateRockets(dt);
-  updateTurret(dt);
   updateMines(dt);
   updateShieldTouch();
+  updateExplosions(dt);
+}
+
+function updateExplosions(dt) {
+  for (const e of explosions) e.timer -= dt;
+  explosions = explosions.filter(e => e.timer > 0);
 }
 
 // ============================================================================
 // --- Отрисовка ---
 // ============================================================================
+/** Стабильный псевдослучайный выбор варианта тайла по координатам клетки —
+ *  не меняется между кадрами, но выглядит вариативно по карте. */
+function tileVariant(row, col, count) {
+  return Math.abs((row * 928371 + col * 12923) % count);
+}
+
 function drawGrid() {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const { x, y } = cellRect(row, col);
       const cell = grid[row][col];
       if (cell === ROCK) { drawRockTile(x, y); continue; }
+      const grassImg = grassImgs[tileVariant(row, col, grassImgs.length)];
       if (grassImg.complete && grassImg.naturalWidth) ctx.drawImage(grassImg, x, y, TILE, TILE);
       else { ctx.fillStyle = (row + col) % 2 === 0 ? '#3f6b3f' : '#385f38'; ctx.fillRect(x, y, TILE, TILE); }
 
@@ -1079,6 +1464,15 @@ function drawGrid() {
       if (cell === CRATE) {
         if (crateImg.complete && crateImg.naturalWidth) { const pad = (TILE - crateImg.naturalWidth) / 2; ctx.drawImage(crateImg, x + pad, y + pad); }
         else { ctx.fillStyle = '#8a6033'; ctx.fillRect(x + 4, y + 4, TILE - 8, TILE - 8); }
+      }
+      if (cell === WALL_BLOCK) {
+        ctx.fillStyle = '#6b5842';
+        ctx.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
+        const hp = wallBlockHP.get(keyOf(row, col)) ?? WALL_BLOCK_HP;
+        for (let i = 0; i < WALL_BLOCK_HP; i++) {
+          ctx.fillStyle = i < hp ? '#ffcc55' : 'rgba(255,255,255,0.2)';
+          ctx.fillRect(x + 6 + i * 8, y + TILE - 8, 6, 4);
+        }
       }
       if (cell === BUSH) {
         if (bushImg.complete && bushImg.naturalWidth) { const pad = (TILE - bushImg.naturalWidth) / 2; ctx.drawImage(bushImg, x + pad, y + pad); }
@@ -1109,9 +1503,9 @@ function drawGateTile(x, y, color) {
 }
 
 function drawTankAt(t, bodyImg, barrelImg) {
-  if (!t.alive) return;
   ctx.save();
   ctx.translate(t.x, t.y);
+  if (t.inSpawnCell) ctx.globalAlpha = 0.5;
   if (t.powerup === 'shield') {
     ctx.beginPath();
     ctx.arc(0, 0, t.radius + 8, 0, Math.PI * 2);
@@ -1135,44 +1529,33 @@ function drawTankAt(t, bodyImg, barrelImg) {
   }
   ctx.restore();
 
-  if (t.carryingFlag) {
+  if (t.inSpawnCell) {
     ctx.save();
-    ctx.font = 'bold 16px Arial';
+    ctx.font = 'bold 13px Courier New';
     ctx.textAlign = 'center';
-    ctx.fillText('🚩', t.x, t.y - t.radius - 10);
+    ctx.fillStyle = '#ffe08c';
+    ctx.fillText(Math.ceil(t.spawnCellTimer) + 'с', t.x, t.y - t.radius - 10);
     ctx.restore();
   }
 }
 
-function drawFlag(flag, color) {
-  const pos = flag.state === 'base' ? flagHomePos(flag) : flag;
-  if (flag.state === 'carried') return; // рисуется как иконка над танком в drawTankAt
+/** Рисует клетку-камеру респауна на базе: закрыта (заперта решётка), пока
+ *  владелец сидит внутри после гибели, иначе открытый люк. */
+function drawSpawnCell(cell, t, color) {
+  const x = cell.col * TILE, y = cell.row * TILE;
   ctx.save();
-  ctx.translate(pos.x, pos.y);
-  ctx.fillStyle = color;
-  ctx.fillRect(-2, -16, 3, 22);
-  ctx.beginPath();
-  ctx.moveTo(1, -16); ctx.lineTo(14, -11); ctx.lineTo(1, -6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawTurret() {
-  ctx.save();
-  ctx.translate(turret.x, turret.y);
-  const bodyColor = turret.owner === 'player' ? '#5fa8ff' : turret.owner === 'bot' ? '#ff7a6b' : '#8d8d92';
-  ctx.fillStyle = bodyColor;
-  ctx.beginPath(); ctx.arc(0, 0, turret.radius, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2; ctx.stroke();
-
-  for (let i = 0; i < 3; i++) {
-    const a = turret.angle + (i * Math.PI * 2) / 3;
-    ctx.save();
-    ctx.rotate(a);
-    ctx.fillStyle = '#33363a';
-    ctx.fillRect(0, -3, turret.radius + 14, 6);
-    ctx.restore();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  if (t.inSpawnCell) {
+    ctx.setLineDash([]);
+    ctx.strokeRect(x + 3, y + 3, TILE - 6, TILE - 6);
+    ctx.beginPath();
+    ctx.moveTo(x + 3, y + 3); ctx.lineTo(x + TILE - 3, y + TILE - 3);
+    ctx.moveTo(x + TILE - 3, y + 3); ctx.lineTo(x + 3, y + TILE - 3);
+    ctx.stroke();
+  } else {
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(x + 5, y + 5, TILE - 10, TILE - 10);
   }
   ctx.restore();
 }
@@ -1208,25 +1591,37 @@ function drawMines() {
   ctx.restore();
 }
 
+function drawExplosions() {
+  for (const e of explosions) {
+    const frame = Math.min(explosionImgs.length - 1, Math.floor((1 - e.timer / EXPLOSION_DURATION) * explosionImgs.length));
+    const img = explosionImgs[frame];
+    if (img.complete && img.naturalWidth) {
+      const s = TILE * 1.3 / Math.max(img.naturalWidth, img.naturalHeight);
+      const w = img.naturalWidth * s, h = img.naturalHeight * s;
+      ctx.drawImage(img, e.x - w / 2, e.y - h / 2, w, h);
+    }
+  }
+}
+
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGrid();
   if (gameState === 'menu') return;
-  drawTurret();
-  drawFlag(flagL, '#5fa8ff');
-  drawFlag(flagR, '#ff7a6b');
+  drawSpawnCell(respawnCellL, player, '#5fa8ff');
+  drawSpawnCell(respawnCellR, bot, '#ff7a6b');
   drawMines();
   drawTankAt(bot, tankBodyRedImg, tankBarrelRedImg);
   drawTankAt(player, tankBodyBlueImg, tankBarrelBlueImg);
   for (const r of rockets) drawRocketAt(r);
+  drawExplosions();
 
-  if (!player.alive) {
+  if (player.inSpawnCell) {
     ctx.save();
     ctx.fillStyle = 'rgba(255,94,94,0.95)';
     ctx.font = 'bold 26px Arial';
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 6;
-    ctx.fillText('УНИЧТОЖЕН — возрождение через ' + Math.ceil(player.respawnTimer) + 'с', canvas.width / 2, 60);
+    ctx.fillText('ЗАПЕРТ В КАМЕРЕ — откроется через ' + Math.ceil(player.spawnCellTimer) + 'с', canvas.width / 2, 60);
     ctx.restore();
   }
 }
@@ -1256,16 +1651,8 @@ function renderHud() {
     else { pip.className = 'ammo-pip'; pip.style.removeProperty('--fill'); }
   }
 
-  document.getElementById('myFlagStatus').textContent =
-    flagL.state === 'base' ? 'на базе' : flagL.state === 'dropped' ? 'брошен' : 'УКРАДЕН';
-  document.getElementById('enemyFlagStatus').textContent =
-    flagR.state === 'base' ? 'на базе' : flagR.state === 'dropped' ? 'брошен' : (flagR.carrier === 'player' ? 'У ТЕБЯ' : 'унесён');
-
-  const turretLabel = turret.owner === 'player' ? 'ТВОЯ' : turret.owner === 'bot' ? 'вражья' : `ничья (${turret.hitsPlayer}/${TURRET_HITS_TO_CAPTURE})`;
-  document.getElementById('turretOwner').textContent = turretLabel;
-
-  const warn = document.getElementById('flagWarn');
-  warn.classList.toggle('hidden', flagL.state !== 'carried');
+  document.getElementById('myKills').textContent = player.kills;
+  document.getElementById('enemyKills').textContent = bot.kills;
 
   const puWrap = document.getElementById('powerupWrap');
   if (player.powerup) {
@@ -1308,9 +1695,8 @@ function endGame(didWin) {
   gameState = didWin ? 'won' : 'lost';
   document.getElementById('hud').classList.add('hidden');
   document.getElementById('controlHint').classList.add('hidden');
-  document.getElementById('flagWarn').classList.add('hidden');
   const title = document.getElementById('endTitle');
-  title.textContent = didWin ? 'ТЫ ПРИНЁС ФЛАГ! ПОБЕДА' : 'БОТ ПРИНЁС ФЛАГ. ПОРАЖЕНИЕ';
+  title.textContent = didWin ? 'ПОБЕДА — 3 КИЛЛА!' : 'ПОРАЖЕНИЕ — БОТ НАБРАЛ 3 КИЛЛА';
   title.className = didWin ? 'win' : 'lose';
   document.getElementById('endScreen').classList.remove('hidden');
 }
@@ -1322,7 +1708,6 @@ function backToGameMenu() {
   document.getElementById('endScreen').classList.add('hidden');
   document.getElementById('hud').classList.add('hidden');
   document.getElementById('controlHint').classList.add('hidden');
-  document.getElementById('flagWarn').classList.add('hidden');
   document.getElementById('menu').classList.remove('hidden');
 }
 
